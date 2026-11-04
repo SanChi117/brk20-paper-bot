@@ -97,14 +97,14 @@ def klines(sym, tf, limit=300):
     return hit[1] if hit else []   # биржа лежит — отдаём последнее живое, а не пустоту
 
 def _fetch_klines(sym, tf, limit=300):
-    now = int(time.time()*1000)
     biv, bbiv, ms = TFS[tf]
     try:
         r = requests.get(f'{BASE}/fapi/v1/klines',
                          params={'symbol': sym, 'interval': biv, 'limit': limit}, timeout=6)
         if r.status_code == 200:
-            out = [(int(x[0]), float(x[1]), float(x[2]), float(x[3]), float(x[4])) for x in r.json()]
-            return [x for x in out if x[0] + ms <= now]
+            # БЕЗ фильтра "x[0]+ms<=now": последняя (формирующаяся) свеча нужна графику —
+            # иначе цена на 1h/4h «замораживается» на закрытии прошлого бара.
+            return [(int(x[0]), float(x[1]), float(x[2]), float(x[3]), float(x[4])) for x in r.json()]
         raise RuntimeError(f'HTTP {r.status_code}')
     except Exception:
         pass
@@ -114,9 +114,8 @@ def _fetch_klines(sym, tf, limit=300):
                                  'limit': min(limit, 1000)}, timeout=6)
         j = r.json()
         if j.get('retCode') == 0:
-            out = [(int(x[0]), float(x[1]), float(x[2]), float(x[3]), float(x[4]))
-                   for x in reversed(j['result']['list'])]
-            return [x for x in out if x[0] + ms <= now]
+            return [(int(x[0]), float(x[1]), float(x[2]), float(x[3]), float(x[4]))
+                    for x in reversed(j['result']['list'])]
     except Exception:
         pass
     return []
@@ -134,8 +133,11 @@ def donchian(sym, side='long', both=False):
     hi20 = [[rows[i][0] // 1000, max(highs[i-120:i])] for i in range(120, len(rows))]
     lo20 = [[rows[i][0] // 1000, min(lows[i-120:i])] for i in range(120, len(rows))]
     atr = None
-    trs = [max(rows[i][2]-rows[i][3], abs(rows[i][2]-rows[i-1][4]), abs(rows[i][3]-rows[i-1][4]))
-           for i in range(1, len(rows))]
+    # ATR — только по ЗАКРЫТЫМ барам (как у бота): формирующуюся свечу отбрасываем,
+    # иначе значение «плывёт» внутри бара и расходится с расчётом стратегии.
+    closed = rows[:-1] if rows[-1][0] + TFS['4h'][2] > int(time.time()*1000) else rows
+    trs = [max(closed[i][2]-closed[i][3], abs(closed[i][2]-closed[i-1][4]), abs(closed[i][3]-closed[i-1][4]))
+           for i in range(1, len(closed))]
     if len(trs) >= 14:
         atr = sum(trs[:14]) / 14
         for tr in trs[14:]:
