@@ -20,6 +20,16 @@ INDEX_F = os.path.join(DIR, 'web', 'index.html')
 DRAW_F = os.path.join(DIR, 'drawings.json')   # рисунки на графиках
 NOTES_F = os.path.join(DIR, 'notes.json')     # заметки к сделкам
 
+# живые стратегии: свои файлы состояния/журнала/команд, своя сторона
+LIVE = {
+    'brk20': {'state': STATE_F, 'journal': JOURNAL_F, 'control': CONTROL_F,
+              'side': 'long', 'eq0': 1000.0},
+    'slot2': {'state': os.path.join(DIR, 'state_slot2.json'),
+              'journal': os.path.join(DIR, 'journal_slot2.log'),
+              'control': os.path.join(DIR, 'control_slot2.json'),
+              'side': 'short', 'eq0': 1000.0},
+}
+
 BASE = 'https://fapi.binance.com'
 BYBIT = 'https://api.bybit.com'
 SYMS = ['SOLUSDT','BNBUSDT','XRPUSDT','ADAUSDT','AVAXUSDT','SUIUSDT','APTUSDT','NEARUSDT',
@@ -32,8 +42,9 @@ STRATEGIES = [
     {'id': 'brk20', 'name': 'BRK-20', 'kind': 'Пробой 20-дневного хая (4h)',
      'status': 'forward-gate', 'risk': '1%', 'pool': len(SYMS),
      'desc': 'Лонг-пробой Donchian-120 на 4h. Стоп −1.75×ATR, BE на +2R, трейл по пивотам. Форвард-гейт: 30 сделок, PF>1.2.'},
-    {'id': 'slot2', 'name': 'Слот 2', 'kind': '—', 'status': 'empty', 'risk': '—', 'pool': 0,
-     'desc': 'Пустой слот. Когда появится вторая стратегия — у неё будет свой счёт, свой гейт и свой журнал.'},
+    {'id': 'slot2', 'name': 'BRK-20 SHORT', 'kind': 'Пробой 20-дневного лоу (4h), шорт',
+     'status': 'forward-gate', 'risk': '1%', 'pool': len(SYMS),
+     'desc': 'Зеркало BRK-20: пробой Donchian-120 вниз, sell-stop, стоп +1.75×ATR, BE на +2R, трейл по пивот-хаям. Бэктест: 117 сделок, PF 1.834, стресс 1.785. Свой счёт, свой гейт: 30 сделок, PF>1.2.'},
     {'id': 'slot3', 'name': 'Слот 3', 'kind': '—', 'status': 'empty', 'risk': '—', 'pool': 0,
      'desc': 'Пустой слот под третью стратегию.'},
     {'id': 'slot4', 'name': 'Слот 4', 'kind': '—', 'status': 'empty', 'risk': '—', 'pool': 0,
@@ -51,12 +62,12 @@ def load_conf():
     with open(CONF_F) as f:
         return json.load(f)
 
-def load_state():
+def load_state(path=None):
     try:
-        with open(STATE_F) as f:
+        with open(path or STATE_F) as f:
             return json.load(f)
     except Exception:
-        return {'eq': 1000.0, 'positions': [], 'pendings': [], 'trades': [], 'paused': False}
+        return None
 
 def load_json(path, default):
     try:
@@ -109,14 +120,21 @@ def _fetch_klines(sym, tf, limit=300):
         pass
     return []
 
-def donchian(sym):
-    """Индикатор стратегии: линия hi20 (макс хаёв за 120 баров 4h = 20 дней) + ATR(14) Wilder.
-    Бот входит, когда 4h-закрытие пробивает эту линию сверху."""
+def donchian(sym, side='long'):
+    """Индикатор стратегии: граница Donchian-120 на 4h (20 дней) + ATR(14) Wilder.
+    Лонг (brk20): HI20 = макс хаёв за 120 баров — вход пробоем вверх.
+    Шорт (slot2): LO20 = мин лоу за 120 баров — вход пробоем вниз."""
     rows = klines(sym, '4h', 300)
     if len(rows) < 130:
-        return {'hi20': [], 'atr': None}
-    highs = [r[2] for r in rows]
-    hi20 = [[rows[i][0] // 1000, max(highs[i-120:i])] for i in range(120, len(rows))]
+        return {'pts': [], 'atr': None, 'line': 'HI20' if side == 'long' else 'LO20'}
+    if side == 'short':
+        src = [r[3] for r in rows]
+        pts = [[rows[i][0] // 1000, min(src[i-120:i])] for i in range(120, len(rows))]
+        line = 'LO20'
+    else:
+        src = [r[2] for r in rows]
+        pts = [[rows[i][0] // 1000, max(src[i-120:i])] for i in range(120, len(rows))]
+        line = 'HI20'
     atr = None
     trs = [max(rows[i][2]-rows[i][3], abs(rows[i][2]-rows[i-1][4]), abs(rows[i][3]-rows[i-1][4]))
            for i in range(1, len(rows))]
@@ -124,7 +142,7 @@ def donchian(sym):
         atr = sum(trs[:14]) / 14
         for tr in trs[14:]:
             atr = (atr * 13 + tr) / 14
-    return {'hi20': hi20[-150:], 'atr': round(atr, 8) if atr else None}
+    return {'pts': pts[-150:], 'atr': round(atr, 8) if atr else None, 'line': line}
 
 def depth(sym, limit=20):
     """Стакан по требованию: Binance фьючи, фолбэк Bybit. bids/asks = [[цена, кол-во], ...]"""
@@ -152,15 +170,19 @@ def depth(sym, limit=20):
     return {'bids': [], 'asks': [], 'src': None}
 
 def api_state(strat='brk20'):
-    if strat != 'brk20':
-        # пустой слот: свой «нулевой» стейт, ничего общего с BRK-20
-        out = dict(EMPTY_STATE)
-        out['strategies'] = STRATEGIES
-        out['syms'] = SYMS
-        out['strat'] = strat
-        out['ts'] = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+    ts = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+    base = {'strategies': STRATEGIES, 'syms': SYMS, 'strat': strat, 'ts': ts}
+    if strat not in LIVE:
+        # пустой слот: свой «нулевой» стейт, ничего общего с живыми стратегиями
+        out = dict(EMPTY_STATE); out.update(base); out['live'] = False
         return out
-    st = load_state()
+    cfg = LIVE[strat]
+    st = load_state(cfg['state'])
+    if st is None:
+        # бот ещё не создал state (не запущен) — показываем свежий нулевой гейт
+        out = dict(EMPTY_STATE); out.update(base)
+        out.update({'eq': cfg['eq0'], 'gate': 'ИДЁТ', 'live': True, 'side': cfg['side']})
+        return out
     trs = st.get('trades', [])
     gw = sum(t['r_usd'] for t in trs if t['r_usd'] > 0)
     gl = -sum(t['r_usd'] for t in trs if t['r_usd'] < 0)
@@ -169,40 +191,45 @@ def api_state(strat='brk20'):
     n = len(trs)
     gate = 'ИДЁТ' if n < 30 else ('ПРОЙДЕН' if (pf or 0) > 1.2 else 'ПРОВАЛЕН')
     eq_curve = []
-    eq = 1000.0
+    eq = cfg['eq0']
     for t in trs:
         eq += t['r_usd']
         eq_curve.append(round(eq, 2))
     journal_tail = []
-    if os.path.exists(JOURNAL_F):
-        with open(JOURNAL_F) as f:
+    if os.path.exists(cfg['journal']):
+        with open(cfg['journal']) as f:
             journal_tail = f.readlines()[-60:]
     notes = load_json(NOTES_F, {})
     for t in trs:
-        if t.get('id') is not None and str(t['id']) in notes:
-            t['note'] = notes[str(t['id'])]
-    return {'eq': round(st['eq'], 2), 'positions': st.get('positions', []),
-            'pendings': st.get('pendings', []), 'trades': trs[-300:],
-            'n': n, 'pf': round(pf, 3) if pf else None, 'wr': round(wr*100, 1),
-            'gate': gate, 'paused': st.get('paused', False),
-            'risk': st.get('risk', 0.01), 'eq_curve': eq_curve,
-            'journal': [x.strip() for x in journal_tail],
-            'strategies': STRATEGIES, 'syms': SYMS,
-            'strat': 'brk20',
-            'started': st.get('started'),
-            'ts': datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}
+        if t.get('id') is not None and str(strat) + ':' + str(t['id']) in notes:
+            t['note'] = notes[str(strat) + ':' + str(t['id'])]
+    out = {'eq': round(st['eq'], 2), 'positions': st.get('positions', []),
+           'pendings': st.get('pendings', []), 'trades': trs[-300:],
+           'n': n, 'pf': round(pf, 3) if pf else None, 'wr': round(wr*100, 1),
+           'gate': gate, 'paused': st.get('paused', False),
+           'risk': st.get('risk', 0.01), 'eq_curve': eq_curve,
+           'journal': [x.strip() for x in journal_tail],
+           'started': st.get('started'),
+           'live': True, 'side': cfg['side']}
+    out.update(base)
+    return out
 
 def queue_control(body):
+    strat = body.get('strat', 'brk20')
+    if strat not in LIVE:
+        return False
+    path = LIVE[strat]['control']
     cmds = []
-    if os.path.exists(CONTROL_F):
+    if os.path.exists(path):
         try:
-            with open(CONTROL_F) as f:
+            with open(path) as f:
                 cmds = json.load(f)
         except Exception:
             cmds = []
     body['ts'] = int(time.time())
     cmds.append(body)
-    save_json(CONTROL_F, cmds)
+    save_json(path, cmds)
+    return True
 
 class Handler(BaseHTTPRequestHandler):
     token = None
@@ -259,7 +286,9 @@ class Handler(BaseHTTPRequestHandler):
             sym = q.get('symbol', ['SOLUSDT'])[0]
             if sym not in SYMS:
                 self._send(400, json.dumps({'error': 'bad symbol'})); return
-            d = donchian(sym)
+            strat = q.get('strat', ['brk20'])[0]
+            side = LIVE.get(strat, {}).get('side', 'long')
+            d = donchian(sym, side)
             d['symbol'] = sym
             self._send(200, json.dumps(d))
         else:
@@ -292,7 +321,8 @@ class Handler(BaseHTTPRequestHandler):
                     body['otype'] = 'market'
                 if body.get('side') not in ('long', 'short'):
                     body['side'] = 'long'
-            queue_control(body)
+            if not queue_control(body):
+                self._send(400, json.dumps({'error': 'слот пуст — некому исполнять команду'})); return
             self._send(200, json.dumps({'ok': True, 'queued': body}, ensure_ascii=False))
 
         elif u.path == '/api/drawings':
@@ -322,14 +352,16 @@ class Handler(BaseHTTPRequestHandler):
 
         elif u.path == '/api/note':
             tid = str(body.get('id', ''))
+            strat = str(body.get('strat', 'brk20'))
             text = str(body.get('text', ''))[:1000]
             if not tid:
                 self._send(400, json.dumps({'error': 'no id'})); return
+            key = strat + ':' + tid
             notes = load_json(NOTES_F, {})
             if text:
-                notes[tid] = text
+                notes[key] = text
             else:
-                notes.pop(tid, None)
+                notes.pop(key, None)
             save_json(NOTES_F, notes)
             self._send(200, json.dumps({'ok': True}))
 
