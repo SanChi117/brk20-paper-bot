@@ -1,1 +1,189 @@
-PLACEHOLDER
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BRK-20 Терминал</title>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root { --bg:#0b0e13; --panel:#12161d; --border:#1e2530; --txt:#d5dce6; --dim:#6b7686;
+          --green:#26a69a; --red:#ef5350; --blue:#2962ff; --amber:#f0b90b; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--txt); font:13px/1.5 "Segoe UI",system-ui,sans-serif; }
+  header { display:flex; gap:18px; align-items:center; padding:10px 16px; background:var(--panel);
+           border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  header .logo { font-weight:700; letter-spacing:1px; color:var(--amber); }
+  .stat { color:var(--dim); } .stat b { color:var(--txt); font-size:15px; margin-left:6px; }
+  .badge { padding:2px 10px; border-radius:10px; font-weight:600; font-size:12px; }
+  .gate-run { background:#1c2b1e; color:var(--green); }
+  .gate-pass { background:#123; color:#4fc3f7; } .gate-fail { background:#33141a; color:var(--red); }
+  .paused { background:#3a2f0b; color:var(--amber); }
+  button { background:#1c2330; color:var(--txt); border:1px solid var(--border); border-radius:6px;
+           padding:5px 12px; cursor:pointer; font-size:12px; }
+  button:hover { background:#242d3d; } button.warn { border-color:var(--red); color:var(--red); }
+  button.act { border-color:var(--green); color:var(--green); }
+  main { display:grid; grid-template-columns:170px 1fr 380px; gap:8px; padding:8px; height:calc(100vh - 54px); }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:8px; overflow:auto; }
+  .panel h3 { padding:8px 12px; font-size:11px; text-transform:uppercase; letter-spacing:1px;
+              color:var(--dim); border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--panel); }
+  #symlist div { padding:7px 12px; cursor:pointer; display:flex; justify-content:space-between; }
+  #symlist div:hover { background:#1a212c; } #symlist div.sel { background:#1c2635; border-left:2px solid var(--blue); }
+  #symlist .dot { width:7px; height:7px; border-radius:50%; align-self:center; }
+  .dot.p { background:var(--green); } .dot.o { background:var(--amber); }
+  #chartwrap { display:flex; flex-direction:column; }
+  #toolbar { display:flex; gap:8px; padding:8px 12px; align-items:center; border-bottom:1px solid var(--border); }
+  #toolbar .cur { font-size:15px; font-weight:700; }
+  #chart { flex:1; min-height:300px; }
+  #eqchart { height:110px; border-top:1px solid var(--border); }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th { text-align:left; color:var(--dim); font-weight:400; padding:5px 8px; border-bottom:1px solid var(--border); }
+  td { padding:5px 8px; border-bottom:1px solid #161b24; }
+  .pos-r { color:var(--green); } .neg-r { color:var(--red); }
+  #journal { font:11px/1.6 ui-monospace,Consolas,monospace; color:#8b95a5; padding:8px 12px; white-space:pre-wrap; }
+  .side { display:flex; flex-direction:column; gap:8px; overflow:auto; }
+  .side .panel { flex:none; }
+  #journalbox { flex:1; min-height:120px; }
+</style>
+</head>
+<body>
+<header>
+  <span class="logo">BRK-20 ТЕРМИНАЛ</span>
+  <span class="stat">Equity<b id="h-eq">—</b></span>
+  <span class="stat">Сделок<b id="h-n">—</b></span>
+  <span class="stat">PF<b id="h-pf">—</b></span>
+  <span class="stat">WR<b id="h-wr">—</b></span>
+  <span id="h-gate" class="badge gate-run">—</span>
+  <span id="h-paused" class="badge paused" style="display:none">ПАУЗА</span>
+  <span style="flex:1"></span>
+  <span class="stat">Риск<b id="h-risk">1%</b></span>
+  <button id="btn-pause">Пауза</button>
+  <span class="stat" id="h-ts"></span>
+</header>
+<main>
+  <div class="panel" id="symlist"><h3>Пул 17</h3></div>
+  <div class="panel" id="chartwrap">
+    <div id="toolbar">
+      <span class="cur" id="cur-sym">SOLUSDT</span>
+      <button id="tf-1h" class="act">1h</button><button id="tf-4h">4h</button>
+      <span class="stat" id="cur-px"></span>
+      <span style="flex:1"></span>
+      <span class="stat" id="cur-info"></span>
+    </div>
+    <div id="chart"></div>
+    <div id="eqchart"></div>
+  </div>
+  <div class="side">
+    <div class="panel"><h3>Позиции</h3><div id="positions"></div></div>
+    <div class="panel"><h3>Заявки buy-stop</h3><div id="pendings"></div></div>
+    <div class="panel"><h3>Сделки (последние)</h3><div id="trades"></div></div>
+    <div class="panel" id="journalbox"><h3>Журнал</h3><div id="journal"></div></div>
+  </div>
+</main>
+<script>
+const KEY = new URLSearchParams(location.search).get('key') || '';
+const api = (p) => fetch(p + (p.includes('?') ? '&' : '?') + 'key=' + KEY).then(r => r.json());
+const ctl = (body) => fetch('/api/control?key=' + KEY, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}).then(r=>r.json());
+
+let SYM = 'SOLUSDT', TF = '1h', STATE = null;
+const fmt = (x) => x == null ? '—' : (x >= 100 ? x.toFixed(2) : x.toPrecision(4));
+
+const chart = LightweightCharts.createChart(document.getElementById('chart'), {
+  layout: { background:{color:'#0b0e13'}, textColor:'#8b95a5' },
+  grid: { vertLines:{color:'#141922'}, horzLines:{color:'#141922'} },
+  timeScale: { timeVisible:true, secondsVisible:false, borderColor:'#1e2530' },
+  rightPriceScale: { borderColor:'#1e2530' },
+  crosshair: { mode: 0 },
+});
+const candles = chart.addCandlestickSeries({
+  upColor:'#26a69a', downColor:'#ef5350', borderVisible:false,
+  wickUpColor:'#26a69a', wickDownColor:'#ef5350' });
+const eqc = LightweightCharts.createChart(document.getElementById('eqchart'), {
+  layout:{background:{color:'#0b0e13'}, textColor:'#8b95a5'},
+  grid:{vertLines:{visible:false}, horzLines:{color:'#141922'}},
+  timeScale:{visible:false}, rightPriceScale:{borderColor:'#1e2530'} });
+const eqline = eqc.addAreaSeries({ lineColor:'#2962ff', topColor:'rgba(41,98,255,.25)', bottomColor:'rgba(41,98,255,0)' });
+
+let priceLines = [];
+function clearLines(){ priceLines.forEach(l => candles.removePriceLine(l)); priceLines = []; }
+function addLine(price, color, title, style=LightweightCharts.LineStyle.Solid){
+  if (!price) return;
+  priceLines.push(candles.createPriceLine({ price, color, lineWidth:1, lineStyle:style, title })); }
+
+async function loadChart(){
+  const d = await api(`/api/klines?symbol=${SYM}&tf=${TF}`);
+  if (!d.candles) return;
+  candles.setData(d.candles.map(x => ({ time:x.t, open:x.o, high:x.h, low:x.l, close:x.c })));
+  if (d.candles.length) document.getElementById('cur-px').textContent = 'посл. ' + fmt(d.candles[d.candles.length-1].c);
+  clearLines();
+  if (STATE) {
+    for (const p of STATE.positions.filter(p => p.sym === SYM)) {
+      addLine(p.entry, '#2962ff', 'вход');
+      addLine(p.stop, '#ef5350', 'стоп');
+      if (p.stage === 0) addLine(p.be_trigger, '#f0b90b', '+2R→BE', LightweightCharts.LineStyle.Dashed);
+    }
+    for (const p of STATE.pendings.filter(p => p.sym === SYM)) {
+      addLine(p.entry, '#f0b90b', 'buy-stop', LightweightCharts.LineStyle.Dashed);
+      addLine(p.stop, '#ef5350', 'SL если вход', LightweightCharts.LineStyle.Dotted);
+    }
+  }
+  chart.timeScale().fitContent();
+}
+
+async function loadState(){
+  STATE = await api('/api/state');
+  if (STATE.error) { document.body.innerHTML = '<h2 style="padding:40px">Неверный ключ. Открой ссылку из установщика.</h2>'; throw 0; }
+  document.getElementById('h-eq').textContent = STATE.eq.toFixed(2) + '$';
+  document.getElementById('h-n').textContent = STATE.n + '/30';
+  document.getElementById('h-pf').textContent = STATE.pf ?? '—';
+  document.getElementById('h-wr').textContent = STATE.wr + '%';
+  document.getElementById('h-risk').textContent = (STATE.risk*100).toFixed(2).replace(/\.?0+$/,'') + '%';
+  document.getElementById('h-ts').textContent = STATE.ts;
+  const g = document.getElementById('h-gate');
+  g.textContent = 'Гейт: ' + STATE.gate;
+  g.className = 'badge ' + (STATE.gate === 'ПРОЙДЕН' ? 'gate-pass' : STATE.gate === 'ПРОВАЛЕН' ? 'gate-fail' : 'gate-run');
+  document.getElementById('h-paused').style.display = STATE.paused ? '' : 'none';
+  document.getElementById('btn-pause').textContent = STATE.paused ? 'Снять паузу' : 'Пауза';
+
+  const acts = {};
+  STATE.positions.forEach(p => acts[p.sym] = 'p');
+  STATE.pendings.forEach(p => { if (!acts[p.sym]) acts[p.sym] = 'o'; });
+  const sl = document.getElementById('symlist');
+  sl.innerHTML = '<h3>Пул 17</h3>' + ['SOLUSDT','BNBUSDT','XRPUSDT','ADAUSDT','AVAXUSDT','SUIUSDT','APTUSDT','NEARUSDT','LINKUSDT','AAVEUSDT','ARBUSDT','OPUSDT','DOGEUSDT','TAOUSDT','ONDOUSDT','INJUSDT','SEIUSDT']
+    .map(s => `<div data-s="${s}" class="${s===SYM?'sel':''}"><span>${s.replace('USDT','')}</span>${acts[s]?`<span class="dot ${acts[s]}"></span>`:''}</div>`).join('');
+  sl.querySelectorAll('div[data-s]').forEach(el => el.onclick = () => { SYM = el.dataset.s; document.getElementById('cur-sym').textContent = SYM; loadChart(); loadState(); });
+
+  document.getElementById('positions').innerHTML = STATE.positions.length
+    ? '<table><tr><th>Монета</th><th>Вход</th><th>Стоп</th><th>Стадия</th><th></th></tr>' +
+      STATE.positions.map(p => `<tr><td>${p.sym}</td><td>${fmt(p.entry)}</td><td>${fmt(p.stop)}</td><td>${p.stage===0?'до BE':'трейл'}</td><td><button class="warn" onclick="closePos('${p.sym}')">Закрыть</button></td></tr>`).join('') + '</table>'
+    : '<div style="padding:10px;color:var(--dim)">пусто</div>';
+  document.getElementById('pendings').innerHTML = STATE.pendings.length
+    ? '<table><tr><th>Монета</th><th>Buy-stop</th><th>Стоп</th><th></th></tr>' +
+      STATE.pendings.map(p => `<tr><td>${p.sym}</td><td>${fmt(p.entry)}</td><td>${fmt(p.stop)}</td><td><button class="warn" onclick="cancelPend('${p.sym}')">Отменить</button></td></tr>`).join('') + '</table>'
+    : '<div style="padding:10px;color:var(--dim)">пусто</div>';
+  const tt = (STATE.trades||[]).slice(-15).reverse();
+  document.getElementById('trades').innerHTML = tt.length
+    ? '<table><tr><th>Монета</th><th>R</th><th>$</th><th>Выход</th></tr>' +
+      tt.map(t => `<tr><td>${t.sym}</td><td class="${t.r>0?'pos-r':'neg-r'}">${t.r>0?'+':''}${t.r.toFixed(2)}R</td><td>${t.r_usd.toFixed(2)}</td><td>${t.out}</td></tr>`).join('') + '</table>'
+    : '<div style="padding:10px;color:var(--dim)">сделок ещё нет</div>';
+  document.getElementById('journal').textContent = (STATE.journal||[]).slice(-15).reverse().join('\n');
+  if (STATE.eq_curve.length)
+    eqline.setData(STATE.eq_curve.map((v,i) => ({ time: i+1, value: v })));
+}
+
+async function closePos(sym){ if (confirm('Закрыть бумажную позицию ' + sym + ' по текущей цене?')) { await ctl({cmd:'close', sym}); loadState(); } }
+async function cancelPend(sym){ await ctl({cmd:'cancel', sym}); loadState(); }
+document.getElementById('btn-pause').onclick = async () => { await ctl({cmd: STATE && STATE.paused ? 'resume' : 'pause'}); loadState(); };
+document.getElementById('tf-1h').onclick = () => { TF='1h'; document.getElementById('tf-1h').className='act'; document.getElementById('tf-4h').className=''; loadChart(); };
+document.getElementById('tf-4h').onclick = () => { TF='4h'; document.getElementById('tf-4h').className='act'; document.getElementById('tf-1h').className=''; loadChart(); };
+
+new ResizeObserver(() => {
+  chart.applyOptions({ width: document.getElementById('chart').clientWidth, height: document.getElementById('chart').clientHeight });
+  eqc.applyOptions({ width: document.getElementById('eqchart').clientWidth, height: 110 });
+}).observe(document.getElementById('chartwrap'));
+
+loadState(); loadChart();
+setInterval(loadState, 10000);
+setInterval(loadChart, 30000);
+</script>
+</body>
+</html>
