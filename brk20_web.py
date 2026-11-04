@@ -120,21 +120,18 @@ def _fetch_klines(sym, tf, limit=300):
         pass
     return []
 
-def donchian(sym, side='long'):
+def donchian(sym, side='long', both=False):
     """Индикатор стратегии: граница Donchian-120 на 4h (20 дней) + ATR(14) Wilder.
     Лонг (brk20): HI20 = макс хаёв за 120 баров — вход пробоем вверх.
-    Шорт (slot2): LO20 = мин лоу за 120 баров — вход пробоем вниз."""
+    Шорт (slot2): LO20 = мин лоу за 120 баров — вход пробоем вниз.
+    both=True: обе границы канала сразу (hi20 + lo20) для визуального сравнения."""
     rows = klines(sym, '4h', 300)
     if len(rows) < 130:
         return {'pts': [], 'atr': None, 'line': 'HI20' if side == 'long' else 'LO20'}
-    if side == 'short':
-        src = [r[3] for r in rows]
-        pts = [[rows[i][0] // 1000, min(src[i-120:i])] for i in range(120, len(rows))]
-        line = 'LO20'
-    else:
-        src = [r[2] for r in rows]
-        pts = [[rows[i][0] // 1000, max(src[i-120:i])] for i in range(120, len(rows))]
-        line = 'HI20'
+    highs = [r[2] for r in rows]
+    lows = [r[3] for r in rows]
+    hi20 = [[rows[i][0] // 1000, max(highs[i-120:i])] for i in range(120, len(rows))]
+    lo20 = [[rows[i][0] // 1000, min(lows[i-120:i])] for i in range(120, len(rows))]
     atr = None
     trs = [max(rows[i][2]-rows[i][3], abs(rows[i][2]-rows[i-1][4]), abs(rows[i][3]-rows[i-1][4]))
            for i in range(1, len(rows))]
@@ -142,7 +139,12 @@ def donchian(sym, side='long'):
         atr = sum(trs[:14]) / 14
         for tr in trs[14:]:
             atr = (atr * 13 + tr) / 14
-    return {'pts': pts[-150:], 'atr': round(atr, 8) if atr else None, 'line': line}
+    atr = round(atr, 8) if atr else None
+    if both:
+        return {'hi20': hi20[-150:], 'lo20': lo20[-150:], 'atr': atr}
+    if side == 'short':
+        return {'pts': lo20[-150:], 'atr': atr, 'line': 'LO20'}
+    return {'pts': hi20[-150:], 'atr': atr, 'line': 'HI20'}
 
 def depth(sym, limit=20):
     """Стакан по требованию: Binance фьючи, фолбэк Bybit. bids/asks = [[цена, кол-во], ...]"""
@@ -288,7 +290,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, json.dumps({'error': 'bad symbol'})); return
             strat = q.get('strat', ['brk20'])[0]
             side = LIVE.get(strat, {}).get('side', 'long')
-            d = donchian(sym, side)
+            both = q.get('both', ['0'])[0] == '1'
+            d = donchian(sym, side, both)
             d['symbol'] = sym
             self._send(200, json.dumps(d))
         else:
