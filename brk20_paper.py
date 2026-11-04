@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-# BRK-20 PAPER BOT v1.1 — форвард-гейт BRK-20 на пуле владельца (17 альтов)
+# BRK-20 PAPER BOT v1.2 — форвард-гейт BRK-20 на пуле владельца (17 альтов)
+# v1.2: контекст сигнала в сделках (почему вошли), id сделок, ручные заявки (заглушка),
+#       команды close_all / cancel_all.
 # Логика 1:1 из bt_candidates19.py (бэктест: 191 сделка, PF 1.723, стресс 1.682)
 # Режим: БУМАЖНЫЙ. Никаких ордеров на бирже, ключи API не нужны и не используются.
-# v1.1: команды из веб-терминала (control.json), пауза, ручное закрытие, риск из state.
 import json, time, os, sys, csv
 from datetime import datetime, timezone
 import requests
@@ -97,10 +98,30 @@ class SymData:
 def default_state():
     return {'eq': EQ0, 'positions': [], 'pendings': [], 'trades': [],
             'last_1h': {}, 'last_4h_signal': 0, 'started': int(time.time()*1000),
-            'paused': False, 'risk': RISK}
+            'paused': False, 'risk': RISK, 'trade_seq': 0}
+
+def _close_manual(st, pos, c=None):
+    """Ручное закрытие позиции по текущей цене (из веб-терминала)."""
+    sym = pos['sym']
+    rows = klines(sym, '1h', 2)
+    px = rows[-1][4] if rows else pos['entry']
+    r_multiple = (px-pos['entry'])/pos['entry']/pos['dist']
+    pnl = r_multiple*pos['r_usd']*pos['rem'] - FEE_STOP*pos['notional']*pos['rem']
+    st['eq'] += pnl
+    st['trade_seq'] = st.get('trade_seq', 0) + 1
+    tr = {'sym': sym, 'entry': pos['entry'], 'exit': px,
+          'r': pos['r_tot'] + pnl/pos['r_usd'], 'r_usd': pnl, 'out': 'manual',
+          'id': st['trade_seq'],
+          'entry_t': pos.get('entry_t'), 'exit_t': int(time.time()*1000),
+          'ctx': pos.get('ctx', {})}
+    if c and c.get('note'):
+        tr['note'] = str(c['note'])[:300]
+    st['trades'].append(tr); append_trade(tr)
+    log(f"WEB: {sym} закрыта вручную @ {px:.6g} | R {tr['r']:+.2f} | eq {st['eq']:.2f}")
+    st['positions'].remove(pos)
 
 def apply_controls(st):
-    """Команды из веб-терминала: пауза, закрытие, отмена, риск, equity."""
+    """Команды из веб-терминала: пауза, закрытие, отмена, риск, equity, ручные заявки."""
     if not os.path.exists(CONTROL_F):
         return
     try:
@@ -124,16 +145,20 @@ def apply_controls(st):
             for pos in list(st['positions']):
                 if pos['sym'] != sym:
                     continue
-                rows = klines(sym, '1h', 2)
-                px = rows[-1][4] if rows else pos['entry']
-                r_multiple = (px-pos['entry'])/pos['entry']/pos['dist']
-                pnl = r_multiple*pos['r_usd']*pos['rem'] - FEE_STOP*pos['notional']*pos['rem']
-                st['eq'] += pnl
-                tr = {'sym': sym, 'entry': pos['entry'], 'exit': px,
-                      'r': pos['r_tot'] + pnl/pos['r_usd'], 'r_usd': pnl, 'out': 'manual'}
-                st['trades'].append(tr); append_trade(tr)
-                log(f"WEB: {sym} закрыта вручную @ {px:.6g} | R {tr['r']:+.2f} | eq {st['eq']:.2f}")
-                st['positions'].remove(pos)
+                _close_manual(st, pos, c)
+        elif cmd == 'close_all':
+            for pos in list(st['positions']):
+                _close_manual(st, pos, c)
+            log('WEB: команда «закрыть все позиции» выполнена')
+        elif cmd == 'cancel_all':
+            n0 = len(st['pendings'])
+            st['pendings'] = []
+            if n0:
+                log(f'WEB: все заявки отменены вручную ({n0} шт.)')
+        elif cmd == 'manual_order':
+            log(f"WEB: РУЧНАЯ ЗАЯВКА (заглушка, не исполняется): {sym or c.get('sym')} "
+                f"{c.get('side','long')} {c.get('otype','market')} qty={c.get('qty','?')} "
+                f"price={c.get('price','-')} note={str(c.get('note',''))[:200]}")
         elif cmd == 'set_risk':
             v = max(0.0025, min(0.02, float(c.get('value', RISK))))
             st['risk'] = v
@@ -165,9 +190,9 @@ def append_trade(tr):
     with open(TRADES_F, 'a', newline='') as f:
         w = csv.writer(f)
         if new:
-            w.writerow(['close_time_utc', 'sym', 'entry', 'exit', 'r', 'r_usd', 'out'])
+            w.writerow(['close_time_utc', 'id', 'sym', 'entry', 'exit', 'r', 'r_usd', 'out'])
         w.writerow([datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M'),
-                    tr['sym'], f"{tr['entry']:.8g}", f"{tr['exit']:.8g}",
+                    tr.get('id', ''), tr['sym'], f"{tr['entry']:.8g}", f"{tr['exit']:.8g}",
                     f"{tr['r']:.3f}", f"{tr['r_usd']:.2f}", tr['out']])
 
 def stats(st):
@@ -200,9 +225,13 @@ def process_bar_1h(st, sym, t, o, h, l, c, symdata):
             r_multiple = (px-pos['entry'])/pos['entry']/pos['dist']
             pnl = r_multiple*pos['r_usd']*pos['rem'] - FEE_STOP*pos['notional']*pos['rem']
             st['eq'] += pnl
+            st['trade_seq'] = st.get('trade_seq', 0) + 1
             tr = {'sym': sym, 'entry': pos['entry'], 'exit': px,
                   'r': pos['r_tot'] + pnl/pos['r_usd'], 'r_usd': pnl,
-                  'out': 'stop' if pos['stage'] == 0 else 'trail'}
+                  'out': 'stop' if pos['stage'] == 0 else 'trail',
+                  'id': st['trade_seq'],
+                  'entry_t': pos.get('entry_t'), 'exit_t': t,
+                  'ctx': pos.get('ctx', {})}
             st['trades'].append(tr); append_trade(tr)
             log(f"EXIT {sym} stop-hit @ {px:.6g} | R {tr['r']:+.2f} | eq {st['eq']:.2f}")
             st['positions'].remove(pos)
@@ -245,7 +274,8 @@ def process_bar_1h(st, sym, t, o, h, l, c, symdata):
         pos = {'sym': sym, 'entry': e, 'stop': p['stop'], 'dist': p['sf'],
                'notional': notional, 'r_usd': st['eq']*risk, 'rem': 1.0,
                'r_tot': -FEE_IN*notional/(st['eq']*risk), 'stage': 0,
-               'entry_t4': t//H4*H4,
+               'entry_t4': t//H4*H4, 'entry_t': t,
+               'ctx': p.get('ctx', {}),
                'be_trigger': e*(1+2.0*p['sf'])}
         st['positions'].append(pos)
         st['eq'] -= FEE_IN*notional
@@ -280,8 +310,12 @@ def scan_signals(st):
             sf = (entry-stop)/entry
             if sf > 0.20 or sf <= 0:
                 continue
+            ctx = {'sig_close': data.closes[i], 'hi20': hi, 'atr': a, 'sf_pct': sf*100,
+                   'sig_t': t4,
+                   'reason': f"4h закрытие {data.closes[i]:.6g} выше хая 20 дней {hi:.6g}; "
+                             f"стоп = вход − 1.75×ATR ({a:.6g}) = {stop:.6g} ({sf*100:.1f}%)"}
             st['pendings'].append({'sym': sym, 'entry': entry, 'stop': stop, 'sf': sf,
-                                   'exp': t4 + TTL_BRK})
+                                   'exp': t4 + TTL_BRK, 'ctx': ctx})
             log(f"SIGNAL {sym}: 4h close {data.closes[i]:.6g} > hi20 {hi:.6g} | buy-stop {entry:.6g}, SL {stop:.6g}, TTL 24h")
 
 def main():
