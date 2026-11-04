@@ -1,0 +1,16 @@
+[Unit]
+Description=BRK-20 SHORT paper trading bot (forward gate, slot 2)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/brk20
+ExecStart=/usr/bin/python3 /root/brk20/brk20s.py
+Restart=always
+RestartSec=30
+StandardOutput=append:/root/brk20/stdout_slot2.log
+StandardError=append:/root/brk20/stdout_slot2.log
+
+[Install]
+WantedBy=multi-user.target
