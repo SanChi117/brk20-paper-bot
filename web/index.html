@@ -836,7 +836,25 @@ document.getElementById('btn-recenter').onclick = recenter;
 // ---------- котировки пула (сайдбар + стат-полоса) ----------
 async function loadQuotes(){
   const d = await api('/api/quotes');
-  if (d.rows && d.rows.length){ QUOTES = d.rows; renderQlist(); renderStatstrip(); }
+  if (d.rows && d.rows.length){ QUOTES = d.rows; renderQlist(); renderStatstrip(); tickLiveCandle(); }
+}
+// живой бар: каждые 5с подставляем текущую цену в формирующуюся свечу,
+// чтобы график (и ценовая шкала) не «замерзал» на закрытии прошлого бара
+let lastBoundaryFetch = 0;
+function tickLiveCandle(){
+  const q = QUOTES.find(r => r.sym === SYM);
+  if (!q || !candleData.length) return;
+  const tfSec = TFMS[TF] / 1000;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const bucket = Math.floor(nowSec / tfSec) * tfSec;
+  const last = candleData[candleData.length - 1];
+  if (last.t === bucket) {
+    last.h = Math.max(last.h, q.px); last.l = Math.min(last.l, q.px); last.c = q.px;
+    try { candles.update({ time: last.t, open: last.o, high: last.h, low: last.l, close: last.c }); } catch(e){}
+  } else if (last.t < bucket && nowSec - lastBoundaryFetch > 15) {
+    lastBoundaryFetch = nowSec;
+    loadChart(false);   // пересекли границу бара — подтянуть новую свечу с сервера
+  }
 }
 function renderQlist(){
   const el = document.getElementById('qlist');
