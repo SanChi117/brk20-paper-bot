@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-# BRK-20 PAPER BOT v1.0 — форвард-гейт BRK-20 на пуле владельца (17 альтов)
+# BRK-20 PAPER BOT v1.1 — форвард-гейт BRK-20 на пуле владельца (17 альтов)
 # Логика 1:1 из bt_candidates19.py (бэктест: 191 сделка, PF 1.723, стресс 1.682)
 # Режим: БУМАЖНЫЙ. Никаких ордеров на бирже, ключи API не нужны и не используются.
+# v1.1: команды из веб-терминала (control.json), пауза, ручное закрытие, риск из state.
 import json, time, os, sys, csv
 from datetime import datetime, timezone
 import requests
@@ -21,6 +22,7 @@ STATE_F = os.path.join(DIR, 'state.json')
 TRADES_F = os.path.join(DIR, 'trades.csv')
 STATUS_F = os.path.join(DIR, 'status.txt')
 JOURNAL_F = os.path.join(DIR, 'journal.log')
+CONTROL_F = os.path.join(DIR, 'control.json')  # команды из веб-терминала
 
 def log(msg):
     line = f"{datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC | {msg}"
@@ -94,7 +96,54 @@ class SymData:
 
 def default_state():
     return {'eq': EQ0, 'positions': [], 'pendings': [], 'trades': [],
-            'last_1h': {}, 'last_4h_signal': 0, 'started': int(time.time()*1000)}
+            'last_1h': {}, 'last_4h_signal': 0, 'started': int(time.time()*1000),
+            'paused': False, 'risk': RISK}
+
+def apply_controls(st):
+    """Команды из веб-терминала: пауза, закрытие, отмена, риск, equity."""
+    if not os.path.exists(CONTROL_F):
+        return
+    try:
+        with open(CONTROL_F) as f:
+            cmds = json.load(f)
+        os.remove(CONTROL_F)
+    except Exception:
+        return
+    for c in cmds:
+        cmd = c.get('cmd'); sym = c.get('sym')
+        if cmd == 'pause':
+            st['paused'] = True; log('WEB: пауза включена (сигналы и входы заморожены, стопы работают)')
+        elif cmd == 'resume':
+            st['paused'] = False; log('WEB: пауза снята')
+        elif cmd == 'cancel' and sym:
+            n0 = len(st['pendings'])
+            st['pendings'] = [p for p in st['pendings'] if p['sym'] != sym]
+            if len(st['pendings']) < n0:
+                log(f'WEB: заявка {sym} отменена вручную')
+        elif cmd == 'close' and sym:
+            for pos in list(st['positions']):
+                if pos['sym'] != sym:
+                    continue
+                rows = klines(sym, '1h', 2)
+                px = rows[-1][4] if rows else pos['entry']
+                r_multiple = (px-pos['entry'])/pos['entry']/pos['dist']
+                pnl = r_multiple*pos['r_usd']*pos['rem'] - FEE_STOP*pos['notional']*pos['rem']
+                st['eq'] += pnl
+                tr = {'sym': sym, 'entry': pos['entry'], 'exit': px,
+                      'r': pos['r_tot'] + pnl/pos['r_usd'], 'r_usd': pnl, 'out': 'manual'}
+                st['trades'].append(tr); append_trade(tr)
+                log(f"WEB: {sym} закрыта вручную @ {px:.6g} | R {tr['r']:+.2f} | eq {st['eq']:.2f}")
+                st['positions'].remove(pos)
+        elif cmd == 'set_risk':
+            v = max(0.0025, min(0.02, float(c.get('value', RISK))))
+            st['risk'] = v
+            log(f'WEB: риск на сделку изменён на {v*100:.2f}% (гейт рассчитан на 1% — изменение фиксируется)')
+        elif cmd == 'set_equity':
+            if st['positions']:
+                log('WEB: отказ в set_equity — есть открытые позиции')
+            else:
+                st['eq'] = float(c.get('value', st['eq']))
+                log(f"WEB: equity установлен вручную: {st['eq']:.2f}")
 
 def load_state():
     if os.path.exists(STATE_F):
@@ -132,8 +181,9 @@ def stats(st):
 def write_status(st):
     n, pf, wr = stats(st)
     gate = 'ИДЁТ' if n < 30 else ('ПРОЙДЕН' if pf > 1.2 else 'ПРОВАЛЕН')
+    pz = ' | ПАУЗА' if st.get('paused') else ''
     txt = (f"BRK-20 PAPER | equity {st['eq']:.2f}$ | сделок {n}/30 | PF {pf:.2f} | WR {wr*100:.0f}% | "
-           f"позиций {len(st['positions'])} | заявок {len(st['pendings'])} | гейт: {gate} | "
+           f"риск {st.get('risk', RISK)*100:.2f}% | позиций {len(st['positions'])} | заявок {len(st['pendings'])} | гейт: {gate}{pz} | "
            f"{datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC\n")
     with open(STATUS_F, 'w') as f:
         f.write(txt)
@@ -173,6 +223,9 @@ def process_bar_1h(st, sym, t, o, h, l, c, symdata):
                     pos['stop'] = newstop
                     log(f"TRAIL {sym}: стоп поднят до {newstop:.6g}")
     # --- fill ---
+    if st.get('paused'):
+        return
+    risk = st.get('risk', RISK)
     for p in list(st['pendings']):
         if p['sym'] != sym:
             continue
@@ -188,10 +241,10 @@ def process_bar_1h(st, sym, t, o, h, l, c, symdata):
         e = p['entry']
         if h < e*(1+SLIP):
             continue
-        notional = min((st['eq']*RISK)/p['sf'], st['eq'])
+        notional = min((st['eq']*risk)/p['sf'], st['eq'])
         pos = {'sym': sym, 'entry': e, 'stop': p['stop'], 'dist': p['sf'],
-               'notional': notional, 'r_usd': st['eq']*RISK, 'rem': 1.0,
-               'r_tot': -FEE_IN*notional/(st['eq']*RISK), 'stage': 0,
+               'notional': notional, 'r_usd': st['eq']*risk, 'rem': 1.0,
+               'r_tot': -FEE_IN*notional/(st['eq']*risk), 'stage': 0,
                'entry_t4': t//H4*H4,
                'be_trigger': e*(1+2.0*p['sf'])}
         st['positions'].append(pos)
@@ -236,7 +289,9 @@ def main():
     st = load_state()
     while True:
         try:
-            scan_signals(st)
+            apply_controls(st)
+            if not st.get('paused'):
+                scan_signals(st)
             # закрытые 1h-бары по символам с позициями/заявками
             active = {p['sym'] for p in st['positions']} | {p['sym'] for p in st['pendings']}
             for sym in active:
