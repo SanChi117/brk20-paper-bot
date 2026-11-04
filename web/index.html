@@ -53,7 +53,7 @@
   #symlist div:hover { background:var(--input); } #symlist div.sel { background:var(--input); border-left:2px solid var(--accent); }
   #symlist .dot { width:7px; height:7px; border-radius:50%; align-self:center; }
   .dot.p { background:var(--green); } .dot.o { background:var(--amber); }
-  #chartwrap { display:flex; flex-direction:column; }
+  #chartwrap { display:flex; flex-direction:column; position:relative; }
   #toolbar { display:flex; gap:6px; padding:7px 12px; align-items:center; border-bottom:1px solid var(--border); flex-wrap:wrap; }
   #toolbar .cur { font-size:15px; font-weight:700; margin-right:4px; }
   #toolbar .sep { width:1px; height:18px; background:var(--border); margin:0 4px; }
@@ -71,6 +71,28 @@
   .empty { padding:10px; color:var(--dim); }
   #drawlist div { display:flex; justify-content:space-between; gap:6px; padding:4px 12px; font-size:12px; }
   #drawlist button { padding:1px 8px; }
+  #ctxmenu div { padding:7px 12px; cursor:pointer; border-radius:5px; white-space:nowrap; }
+  #ctxmenu div:hover { background:var(--input); }
+  #manual-side { padding:10px 12px; }
+  #manual-side form { display:flex; flex-direction:column; gap:6px; }
+  #manual-side label { color:var(--dim); font-size:11px; }
+  #manual-side .row2 { display:flex; gap:6px; } #manual-side .row2 > * { flex:1; min-width:0; }
+  /* стакан поверх графика (по требованию) */
+  #depthbox { display:none; position:absolute; right:10px; top:46px; width:210px; z-index:20;
+              background:var(--panel); border:1px solid var(--border); border-radius:8px;
+              box-shadow:0 8px 30px rgba(0,0,0,.45); font:11px/1.5 ui-monospace,Consolas,monospace; }
+  #depthbox .dh { display:flex; justify-content:space-between; padding:6px 10px; color:var(--dim);
+                  border-bottom:1px solid var(--border); font-family:"Segoe UI",system-ui,sans-serif; }
+  #depthbox .dh b { color:var(--txt); } #depthbox .dh span { cursor:pointer; }
+  #depthbox .cols { display:flex; color:var(--dim); padding:3px 10px; }
+  #depthbox .cols span, #depthbox .drow span { flex:1; text-align:right; }
+  #depthbox .cols span:first-child, #depthbox .drow span:first-child { text-align:left; }
+  #depthbox .drow { display:flex; padding:1px 10px; position:relative; }
+  #depthbox .drow span { position:relative; }
+  #depthbox .drow i { position:absolute; right:0; top:0; bottom:0; opacity:.13; }
+  #depthbox .ask i { background:var(--red); } #depthbox .bid i { background:var(--green); }
+  #depthbox .ask span:first-child { color:var(--red); } #depthbox .bid span:first-child { color:var(--green); }
+  #depthbox .spread { text-align:center; padding:3px; color:var(--amber); border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
 
   /* --- журнал сделок --- */
   #v-trades { padding:8px; height:calc(100vh - 96px); }
@@ -102,6 +124,12 @@
   <span id="h-gate" class="badge gate-run">—</span>
   <span id="h-paused" class="badge paused" style="display:none">ПАУЗА</span>
   <span style="flex:1"></span>
+  <span class="stat">Стратегия
+    <select id="strat" title="Слот стратегии">
+      <option value="brk20">BRK-20</option>
+      <option value="slot2">Слот 2 (пусто)</option>
+    </select>
+  </span>
   <span class="stat">Риск<b id="h-risk">1%</b></span>
   <button id="btn-pause">Пауза</button>
   <select id="theme" title="Тема оформления">
@@ -132,15 +160,49 @@
       <span class="sep"></span>
       <button id="dr-hline" title="Горизонтальная линия: клик на графике">━ Линия</button>
       <button id="dr-trend" title="Трендовая: 2 клика — начало и конец">╱ Тренд</button>
+      <button id="dr-rect" title="Зона: 2 клика — противоположные углы (или ПКМ → Зона)">▭ Зона</button>
+      <button id="dr-brush" title="Кисть: зажми ЛКМ и рисуй свободно">✏ Кисть</button>
+      <button id="dr-measure" title="Линейка: 2 клика — покажет Δ% и число баров">📏 Линейка</button>
       <button id="dr-note" title="Заметка: клик на графике">✎ Заметка</button>
+      <button id="dr-mark" title="Метка-стрелка: клик на графике">↑↓ Метка</button>
       <button id="dr-off" class="act" title="Выключить рисование">✕</button>
+      <span class="sep"></span>
+      <button id="btn-depth" title="Стакан по текущей монете">▦ Стакан</button>
+      <button id="btn-recenter" title="К актуальной цене">⟶</button>
       <span style="flex:1"></span>
       <span class="stat" id="cur-info"></span>
     </div>
     <div id="chart"></div>
+    <div id="ctxmenu" style="display:none;position:fixed;z-index:50;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:4px;min-width:200px;box-shadow:0 6px 24px rgba(0,0,0,.4)"></div>
+    <div id="depthbox">
+      <div class="dh"><b>Стакан</b><span id="depth-sym"></span><span id="depth-x" title="Закрыть">✕</span></div>
+      <div class="cols"><span>Цена</span><span>Кол-во</span><span>Сумма</span></div>
+      <div id="depth-asks"></div>
+      <div class="spread" id="depth-spread">—</div>
+      <div id="depth-bids"></div>
+    </div>
     <div id="eqchart"></div>
   </div>
   <div class="side">
+    <div class="panel"><h3>Ручная заявка <span class="badge paused" style="font-size:10px">заглушка</span></h3>
+      <div id="manual-side">
+        <form id="f-manual">
+          <div class="row2">
+            <div><label>Монета</label><select id="m-sym" style="width:100%"></select></div>
+            <div><label>Сторона</label><select id="m-side" style="width:100%"><option value="long">Лонг</option><option value="short">Шорт</option></select></div>
+          </div>
+          <div class="row2">
+            <div><label>Тип</label><select id="m-type" style="width:100%"><option value="market">Рыночная</option><option value="limit">Лимитная</option><option value="stop">Условная</option></select></div>
+            <div><label>Цена</label><input id="m-price" type="number" step="any" placeholder="рынок" style="width:100%"></div>
+          </div>
+          <div class="row2">
+            <div><label>Размер, $</label><input id="m-qty" type="number" step="any" placeholder="—" style="width:100%"></div>
+            <div><label>Комментарий</label><input id="m-note" placeholder="почему вход" style="width:100%"></div>
+          </div>
+          <button class="go">В журнал (не исполняется)</button>
+        </form>
+      </div>
+    </div>
     <div class="panel"><h3>Позиции</h3><div id="positions"></div></div>
     <div class="panel"><h3>Заявки buy-stop</h3><div id="pendings"></div></div>
     <div class="panel"><h3>Рисунки на графике</h3><div id="drawlist"></div></div>
@@ -188,23 +250,8 @@
     </div>
   </div>
   <div class="card">
-    <h3>Ручная заявка <span class="badge paused">заглушка</span></h3>
-    <div class="kv">Пока не исполняется — уходит в журнал как запись. Когда пройдём гейт и подключим реал, эта форма станет рабочей.</div>
-    <form id="f-manual">
-      <label>Монета</label>
-      <select id="m-sym"></select>
-      <div class="row2">
-        <div><label>Направление</label><select id="m-side"><option value="long">Лонг</option><option value="short">Шорт</option></select></div>
-        <div><label>Тип</label><select id="m-type"><option value="market">Рыночная</option><option value="limit">Лимитная</option><option value="stop">Условная (стоп)</option></select></div>
-      </div>
-      <div class="row2">
-        <div><label>Цена (для лимит/стоп)</label><input id="m-price" type="number" step="any" placeholder="—"></div>
-        <div><label>Размер, $</label><input id="m-qty" type="number" step="any" placeholder="—"></div>
-      </div>
-      <label>Комментарий (почему вход)</label>
-      <input id="m-note" placeholder="структура, причина...">
-      <button class="go">Отправить в журнал</button>
-    </form>
+    <h3>Ручная заявка</h3>
+    <div class="kv">Переехала в терминал — панель справа от графика, чтобы ордер выставлялся «глядя на цену». Пока заглушка: запись в журнал, без исполнения.</div>
   </div>
   <div class="card">
     <h3>Сервис</h3>
@@ -222,9 +269,11 @@ const post = (p, body) => fetch(p + '?key=' + KEY, {method:'POST', headers:{'Con
 const ctl = (body) => post('/api/control', body);
 
 let SYM = 'SOLUSDT', TF = '1h', STATE = null, DRAWINGS = [], DRAWMODE = null, trendFirst = null;
+let STRAT = 'brk20';
 const fmt = (x) => x == null ? '—' : (x >= 100 ? x.toFixed(2) : x.toPrecision(4));
 const fmtT = (ms) => ms ? new Date(ms).toISOString().slice(5,16).replace('T',' ') : '—';
 const SYMS17 = ['SOLUSDT','BNBUSDT','XRPUSDT','ADAUSDT','AVAXUSDT','SUIUSDT','APTUSDT','NEARUSDT','LINKUSDT','AAVEUSDT','ARBUSDT','OPUSDT','DOGEUSDT','TAOUSDT','ONDOUSDT','INJUSDT','SEIUSDT'];
+const TFMS = {'15m':900000,'30m':1800000,'1h':3600000,'4h':14400000,'1d':86400000};
 
 // ---------- темы ----------
 const savedTheme = localStorage.getItem('brk-theme') || 'theme-dark';
@@ -240,6 +289,18 @@ function themeColors(){
   return { bg: s.getPropertyValue('--bg').trim(), txt: '#8b95a5', grid: s.getPropertyValue('--grid').trim(),
            border: s.getPropertyValue('--border').trim(), accent: s.getPropertyValue('--accent').trim() };
 }
+
+// ---------- слот стратегии ----------
+document.getElementById('strat').onchange = (e) => {
+  STRAT = e.target.value;
+  const live = STRAT === 'brk20';
+  // в пустом слоте все кнопки управления гасим — данных бота там нет
+  ['btn-pause','btn-cancel-all','btn-close-all'].forEach(id => document.getElementById(id).disabled = !live);
+  document.getElementById('f-risk').querySelectorAll('input,button').forEach(x => x.disabled = !live);
+  document.getElementById('f-eq').querySelectorAll('input,button').forEach(x => x.disabled = !live);
+  loadState().then(() => loadChart(false));   // линии позиций/заявок — только активного слота
+  if (document.getElementById('v-trades').classList.contains('cur')) renderTradebook();
+};
 
 // ---------- вкладки ----------
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
@@ -281,10 +342,12 @@ function applyChartTheme(){
   eqline.applyOptions({ lineColor:c.accent, topColor:c.accent+'40', bottomColor:c.accent+'00' });
 }
 
-let priceLines = [], drawSeries = [];
+let priceLines = [], drawSeries = [], chartMarkers = [];
 function clearLines(){
   priceLines.forEach(l => candles.removePriceLine(l)); priceLines = [];
   drawSeries.forEach(s => chart.removeSeries(s)); drawSeries = [];
+  chartMarkers = [];
+  candles.setMarkers([]);
 }
 function addLine(price, color, title, style=LightweightCharts.LineStyle.Solid){
   if (!price) return;
@@ -301,19 +364,29 @@ async function loadChart(scrollEnd){
   candles.setData(d.candles.map(x => ({ time:x.t, open:x.o, high:x.h, low:x.l, close:x.c })));
   if (d.candles.length) document.getElementById('cur-px').textContent = 'посл. ' + fmt(d.candles[d.candles.length-1].c);
   clearLines();
-  if (STATE) {
+  if (STATE && STRAT === 'brk20') {
+    const last = d.candles.length ? d.candles[d.candles.length-1].c : null;
     for (const p of STATE.positions.filter(p => p.sym === SYM)) {
-      addLine(p.entry, '#2962ff', 'вход');
-      addLine(p.stop, '#ef5350', 'стоп');
+      const pnl = (last && p.entry) ? (last/p.entry - 1) * 100 : null;
+      priceLines.push(candles.createPriceLine({ price: p.entry, color:'#2962ff', lineWidth:2,
+        lineStyle:LightweightCharts.LineStyle.Solid,
+        title: `ПОЗИЦИЯ ${fmt(p.entry)}` + (pnl != null ? ` · ${pnl>=0?'+':''}${pnl.toFixed(1)}%` : '') }));
+      addLine(p.stop, '#ef5350', 'СТОП ' + fmt(p.stop));
       if (p.stage === 0) addLine(p.be_trigger, '#f0b90b', '+2R→BE', LightweightCharts.LineStyle.Dashed);
     }
     for (const p of STATE.pendings.filter(p => p.sym === SYM)) {
-      addLine(p.entry, '#f0b90b', 'buy-stop', LightweightCharts.LineStyle.Dashed);
-      addLine(p.stop, '#ef5350', 'SL если вход', LightweightCharts.LineStyle.Dotted);
+      priceLines.push(candles.createPriceLine({ price: p.entry, color:'#f0b90b', lineWidth:2,
+        lineStyle:LightweightCharts.LineStyle.Dashed, title: `ЗАЯВКА buy-stop ${fmt(p.entry)}` }));
+      addLine(p.stop, '#ef5350', 'SL если вход ' + fmt(p.stop), LightweightCharts.LineStyle.Dotted);
     }
   }
   renderDrawings();
-  if (scrollEnd !== false) chart.timeScale().scrollToRealTime();  // автоцентровка на актуальную цену
+  candles.setMarkers(chartMarkers);
+  if (scrollEnd !== false) {
+    // автоцентровка на актуальную цену: показываем последние ~90 баров
+    const n = d.candles.length;
+    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 90), to: n + 6 });
+  }
   else chart.timeScale().fitContent();
 }
 
@@ -347,6 +420,49 @@ function renderDrawings(){
     } else if (it.type === 'note' && it.price){
       priceLines.push(candles.createPriceLine({ price: it.price, color:'#8a5cff',
         lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, title: '✎ ' + (it.text || '').slice(0, 40) }));
+    } else if (it.type === 'marker' && it.time){
+      const t = nearestTime(it.time);
+      if (t == null) continue;
+      const up = it.dir !== 'down';
+      chartMarkers.push({ time: t, position: up ? 'belowBar' : 'aboveBar',
+        color: up ? '#26a69a' : '#ef5350', shape: up ? 'arrowUp' : 'arrowDown',
+        text: (it.text || '').slice(0, 20) });
+    } else if (it.type === 'rect' && it.t1 && it.t2){
+      // зона: границы + полупрозрачные полосы внутри (lightweight-charts не умеет заливку)
+      const t1 = nearestTime(Math.min(it.t1, it.t2)), t2 = nearestTime(Math.max(it.t1, it.t2));
+      if (t1 == null || t2 == null || t1 === t2) continue;
+      const hi = Math.max(it.p1, it.p2), lo = Math.min(it.p1, it.p2);
+      const col = it.color || '#2962ff';
+      const seg = (p, w, c) => {
+        const s = chart.addLineSeries({ color: c, lineWidth: w, priceLineVisible:false,
+          lastValueVisible:false, crosshairMarkerVisible:false });
+        s.setData([{time:t1, value:p}, {time:t2, value:p}]);
+        drawSeries.push(s);
+      };
+      seg(hi, 2, col); seg(lo, 2, col);
+      for (let i = 1; i < 8; i++)
+        seg(lo + (hi - lo) * i / 8, 12, col + '14');
+    } else if (it.type === 'brush' && Array.isArray(it.pts) && it.pts.length > 1){
+      const pts = it.pts.map(([t, p]) => ({ time: nearestTime(t), value: p }))
+        .filter(x => x.time != null)
+        .sort((a, b) => a.time - b.time)
+        .filter((x, i, a) => i === 0 || x.time !== a[i-1].time);
+      if (pts.length > 1){
+        const s = chart.addLineSeries({ color: it.color || '#f0b90b', lineWidth:2,
+          priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+        s.setData(pts);
+        drawSeries.push(s);
+      }
+    } else if (it.type === 'measure' && it.t1 && it.t2){
+      const t1 = nearestTime(it.t1), t2 = nearestTime(it.t2);
+      if (t1 == null || t2 == null || t1 === t2) continue;
+      const s = chart.addLineSeries({ color:'#8a5cff', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed,
+        priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+      s.setData([{time:t1, value:it.p1}, {time:t2, value:it.p2}].sort((a,b)=>a.time-b.time));
+      drawSeries.push(s);
+      const dp = (it.p2/it.p1 - 1) * 100, nb = Math.round(Math.abs(it.t2 - it.t1) / (TFMS[TF]/1000));
+      chartMarkers.push({ time: Math.max(t1, t2), position:'aboveBar', color:'#8a5cff', shape:'circle',
+        text: `${dp>=0?'+':''}${dp.toFixed(2)}% · ${nb}б` });
     }
   }
 }
@@ -354,9 +470,11 @@ function renderDrawings(){
 function renderDrawList(){
   const el = document.getElementById('drawlist');
   const mine = DRAWINGS.filter(x => x.tf === TF);
+  const ICONS = {hline:'━ линия', trend:'╱ тренд', note:'✎ заметка', marker:'↑↓ метка',
+                 rect:'▭ зона', brush:'✏ кисть', measure:'📏 линейка'};
   el.innerHTML = mine.length
-    ? mine.map(x => `<div><span>${{hline:'━ линия', trend:'╱ тренд', note:'✎ заметка'}[x.type]} ${fmt(x.price || x.p1 || 0)} ${x.text ? '· ' + x.text.slice(0,30) : ''}</span><button class="warn" onclick="delDraw(${x.id})">✕</button></div>`).join('')
-    : '<div class="empty">пусто — выбери инструмент и кликни на график</div>';
+    ? mine.map(x => `<div><span>${ICONS[x.type]||x.type} ${fmt(x.price || x.p1 || 0)} ${x.text ? '· ' + x.text.slice(0,30) : ''}</span><button class="warn" onclick="delDraw(${x.id})">✕</button></div>`).join('')
+    : '<div class="empty">пусто — выбери инструмент и кликни на график (или ПКМ)</div>';
 }
 
 async function delDraw(id){
@@ -364,19 +482,32 @@ async function delDraw(id){
   await loadDrawings(); loadChart(false);
 }
 
+const DRBTN = {hline:'dr-hline', trend:'dr-trend', rect:'dr-rect', brush:'dr-brush',
+               measure:'dr-measure', note:'dr-note', marker:'dr-mark'};
 function setDrawMode(m){
   DRAWMODE = m; trendFirst = null;
-  ['dr-hline','dr-trend','dr-note','dr-off'].forEach(id => document.getElementById(id).classList.remove('act'));
-  document.getElementById(m === 'hline' ? 'dr-hline' : m === 'trend' ? 'dr-trend' : m === 'note' ? 'dr-note' : 'dr-off').classList.add('act');
+  Object.values(DRBTN).concat(['dr-off']).forEach(id => document.getElementById(id).classList.remove('act'));
+  document.getElementById(m ? DRBTN[m] : 'dr-off').classList.add('act');
   document.getElementById('chart').classList.toggle('draw-mode', !!m);
+  // кисть рисуется перетаскиванием — отключаем панораму графика, чтобы не конфликтовала
+  chart.applyOptions({ handleScroll: m === 'brush' ? false : true,
+                       handleScale: m === 'brush' ? false : true });
+  document.getElementById('cur-info').textContent =
+    m === 'brush' ? 'зажми ЛКМ и рисуй' :
+    m === 'rect' ? 'кликни первый угол зоны' :
+    m === 'measure' ? 'кликни первую точку' : '';
 }
 document.getElementById('dr-hline').onclick = () => setDrawMode('hline');
 document.getElementById('dr-trend').onclick = () => setDrawMode('trend');
+document.getElementById('dr-rect').onclick = () => setDrawMode('rect');
+document.getElementById('dr-brush').onclick = () => setDrawMode('brush');
+document.getElementById('dr-measure').onclick = () => setDrawMode('measure');
 document.getElementById('dr-note').onclick = () => setDrawMode('note');
+document.getElementById('dr-mark').onclick = () => setDrawMode('marker');
 document.getElementById('dr-off').onclick = () => setDrawMode(null);
 
 chart.subscribeClick(async (param) => {
-  if (!DRAWMODE || !param.point) return;
+  if (!DRAWMODE || DRAWMODE === 'brush' || !param.point) return;
   const price = candles.coordinateToPrice(param.point.y);
   const time = param.time || nearestTime(Math.round(chart.timeScale().coordinateToTime(param.point.x) || 0));
   if (price == null) return;
@@ -387,31 +518,179 @@ chart.subscribeClick(async (param) => {
     const text = prompt('Текст заметки:');
     if (!text) return;
     await post('/api/drawings', {symbol: SYM, tf: TF, action:'add', item:{type:'note', price, time, text}});
-  } else if (DRAWMODE === 'trend'){
-    if (!trendFirst){ trendFirst = {t: time, p: price}; return; }
+  } else if (DRAWMODE === 'marker'){
+    const text = prompt('Метка: ↑ (вверх) или ↓ (вниз) + текст, напр. «↑ импульс»:', '↑ ');
+    if (!text) return;
+    const dir = text.trim().startsWith('↓') ? 'down' : 'up';
+    await post('/api/drawings', {symbol: SYM, tf: TF, action:'add',
+      item:{type:'marker', price, time, dir, text: text.replace(/^[↑↓]\s*/, '')}});
+  } else if (DRAWMODE === 'trend' || DRAWMODE === 'rect' || DRAWMODE === 'measure'){
+    if (!trendFirst){ trendFirst = {t: time, p: price}; setDrawMode(DRAWMODE); return; }
     if (time == null || time === trendFirst.t){ alert('Второй клик должен быть на другом баре'); trendFirst = null; return; }
     await post('/api/drawings', {symbol: SYM, tf: TF, action:'add',
-      item:{type:'trend', t1: trendFirst.t, p1: trendFirst.p, t2: time, p2: price}});
+      item:{type: DRAWMODE, t1: trendFirst.t, p1: trendFirst.p, t2: time, p2: price}});
     trendFirst = null;
+    setDrawMode(DRAWMODE);
   }
   await loadDrawings(); loadChart(false);
 });
 
+// ---------- кисть (свободное рисование) ----------
+let brushPts = null;
+const chartEl = document.getElementById('chart');
+chartEl.addEventListener('mousedown', e => {
+  if (DRAWMODE === 'brush' && e.button === 0){ brushPts = []; e.preventDefault(); }
+});
+window.addEventListener('mousemove', e => {
+  if (!brushPts) return;
+  const r = chartEl.getBoundingClientRect();
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+  if (x < 0 || y < 0 || x > r.width || y > r.height) return;
+  const price = candles.coordinateToPrice(y);
+  let t = chart.timeScale().coordinateToTime(x);
+  t = nearestTime(typeof t === 'number' ? t : barTimes[barTimes.length - 1]);
+  if (price == null || t == null) return;
+  const last = brushPts[brushPts.length - 1];
+  if (!last || last[0] !== t) brushPts.push([t, price]);
+  else last[1] = price;
+});
+window.addEventListener('mouseup', async () => {
+  if (!brushPts) return;
+  const pts = brushPts; brushPts = null;
+  if (pts.length >= 2){
+    const step = Math.max(1, Math.floor(pts.length / 250));
+    const slim = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
+    await post('/api/drawings', {symbol: SYM, tf: TF, action:'add', item:{type:'brush', pts: slim}});
+    await loadDrawings(); loadChart(false);
+  }
+});
+
+// ---------- ПКМ меню на графике ----------
+const ctxEl = document.getElementById('ctxmenu');
+let ctxAnchor = null;
+chartEl.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  const r = chartEl.getBoundingClientRect();
+  const price = candles.coordinateToPrice(e.clientY - r.top);
+  let t = chart.timeScale().coordinateToTime(e.clientX - r.left);
+  ctxAnchor = { price, time: nearestTime(typeof t === 'number' ? t : barTimes[barTimes.length - 1]) };
+  const px = price != null ? ' · ' + fmt(price) : '';
+  const items = [
+    ['hline', '━ Линия здесь' + px],
+    ['note', '✎ Заметка здесь'],
+    ['markup', '↑ Метка вверх'],
+    ['markdn', '↓ Метка вниз'],
+    ['rect', '▭ Зона от этой точки'],
+    ['limit', '⏱ Лимитка по этой цене'],
+    ['sep'],
+    ['recenter', '⟶ К актуальной цене'],
+    ['depth', depthOn ? '▦ Скрыть стакан' : '▦ Показать стакан'],
+    ['clear', '🗑 Очистить рисунки на этом ТФ'],
+  ];
+  ctxEl.innerHTML = items.map(([k, label]) => k === 'sep'
+    ? '<div style="border-top:1px solid var(--border);margin:3px 0;padding:0;cursor:default"></div>'
+    : `<div data-k="${k}">${label}</div>`).join('');
+  ctxEl.style.display = 'block';
+  ctxEl.style.left = Math.min(e.clientX, innerWidth - 230) + 'px';
+  ctxEl.style.top = Math.min(e.clientY, innerHeight - items.length * 30 - 16) + 'px';
+  ctxEl.querySelectorAll('div[data-k]').forEach(d => d.onclick = () => {
+    ctxEl.style.display = 'none';
+    ctxAction(d.dataset.k);
+  });
+});
+document.addEventListener('mousedown', e => {
+  if (!ctxEl.contains(e.target)) ctxEl.style.display = 'none';
+});
+async function ctxAction(k){
+  const a = ctxAnchor || {};
+  if (k === 'hline' && a.price != null){
+    const text = prompt('Подпись линии (можно пусто):', '') || '';
+    await post('/api/drawings', {symbol: SYM, tf: TF, action:'add', item:{type:'hline', price: a.price, text}});
+  } else if (k === 'note' && a.price != null){
+    const text = prompt('Текст заметки:');
+    if (!text) return;
+    await post('/api/drawings', {symbol: SYM, tf: TF, action:'add', item:{type:'note', price: a.price, time: a.time, text}});
+  } else if ((k === 'markup' || k === 'markdn') && a.time != null){
+    const text = prompt('Текст метки (можно пусто):', '') || '';
+    await post('/api/drawings', {symbol: SYM, tf: TF, action:'add',
+      item:{type:'marker', price: a.price, time: a.time, dir: k === 'markup' ? 'up' : 'down', text}});
+  } else if (k === 'rect' && a.price != null){
+    trendFirst = {t: a.time, p: a.price};
+    setDrawMode('rect');
+    return; // второй угол — следующим кликом по графику
+  } else if (k === 'limit' && a.price != null){
+    // как на бирже: ПКМ по цене → форма заявки подставлена
+    document.getElementById('m-sym').value = SYM;
+    document.getElementById('m-type').value = 'limit';
+    document.getElementById('m-price').value = a.price;
+    document.getElementById('m-qty').focus();
+    return;
+  } else if (k === 'recenter'){
+    recenter();
+    return;
+  } else if (k === 'depth'){
+    toggleDepth();
+    return;
+  } else if (k === 'clear'){
+    if (!confirm('Удалить все рисунки ' + SYM + ' на ТФ ' + TF + '?')) return;
+    await post('/api/drawings', {symbol: SYM, tf: TF, action:'clear'});
+  }
+  await loadDrawings(); loadChart(false);
+}
+
+// ---------- центровка / стакан ----------
+function recenter(){
+  const n = candleData.length;
+  if (n) chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 90), to: n + 6 });
+}
+document.getElementById('btn-recenter').onclick = recenter;
+
+let depthOn = false, depthTimer = null;
+async function toggleDepth(){
+  depthOn = !depthOn;
+  document.getElementById('depthbox').style.display = depthOn ? 'block' : 'none';
+  document.getElementById('btn-depth').classList.toggle('act', depthOn);
+  if (depthOn){ renderDepth(); depthTimer = setInterval(renderDepth, 2500); }
+  else clearInterval(depthTimer);
+}
+document.getElementById('btn-depth').onclick = toggleDepth;
+document.getElementById('depth-x').onclick = toggleDepth;
+async function renderDepth(){
+  if (!depthOn) return;
+  const d = await api(`/api/depth?symbol=${SYM}`);
+  if (!d.bids || !d.bids.length) return;
+  document.getElementById('depth-sym').textContent = SYM.replace('USDT','');
+  const N = 10;
+  const asks = d.asks.slice(0, N), bids = d.bids.slice(0, N);
+  const maxQ = Math.max(...asks.map(x => x[1]), ...bids.map(x => x[1])) || 1;
+  let cumA = 0, cumB = 0;
+  const row = ([p, q], cum, cls) =>
+    `<div class="drow ${cls}"><i style="width:${Math.min(100, q/maxQ*100).toFixed(1)}%"></i><span>${fmt(p)}</span><span>${fmt(q)}</span><span>${fmt(cum)}</span></div>`;
+  document.getElementById('depth-asks').innerHTML = asks.map(x => { cumA += x[1]; return [x, cumA]; })
+    .reverse().map(([x, c]) => row(x, c, 'ask')).join('');
+  document.getElementById('depth-bids').innerHTML = bids.map(x => { cumB += x[1]; return row(x, cumB, 'bid'); }).join('');
+  const spr = asks.length && bids.length ? asks[0][0] - bids[0][0] : 0;
+  document.getElementById('depth-spread').textContent = 'спред ' + fmt(spr) +
+    (bids.length && bids[0][0] ? ' (' + (spr/bids[0][0]*100).toFixed(3) + '%)' : '');
+}
+
 // ---------- состояние ----------
 async function loadState(){
-  STATE = await api('/api/state');
+  STATE = await api('/api/state?strat=' + STRAT);
   if (STATE.error) { document.body.innerHTML = '<h2 style="padding:40px">Неверный ключ. Открой ссылку из установщика.</h2>'; throw 0; }
-  document.getElementById('h-eq').textContent = STATE.eq.toFixed(2) + '$';
-  document.getElementById('h-n').textContent = STATE.n + '/30';
-  document.getElementById('h-pf').textContent = STATE.pf ?? '—';
-  document.getElementById('h-wr').textContent = STATE.wr + '%';
+  const live = STRAT === 'brk20';
+  document.getElementById('h-eq').textContent = live ? STATE.eq.toFixed(2) + '$' : '—';
+  document.getElementById('h-n').textContent = live ? STATE.n + '/30' : '—';
+  document.getElementById('h-pf').textContent = live ? (STATE.pf ?? '—') : '—';
+  document.getElementById('h-wr').textContent = live ? STATE.wr + '%' : '—';
   document.getElementById('h-risk').textContent = (STATE.risk*100).toFixed(2).replace(/\.?0+$/,'') + '%';
   document.getElementById('h-ts').textContent = STATE.ts;
   document.getElementById('srv-ts').textContent = 'Время сервера: ' + STATE.ts + ' | бот запущен с ' + fmtT(STATE.started);
   const g = document.getElementById('h-gate');
   g.textContent = 'Гейт: ' + STATE.gate;
   g.className = 'badge ' + (STATE.gate === 'ПРОЙДЕН' ? 'gate-pass' : STATE.gate === 'ПРОВАЛЕН' ? 'gate-fail' : 'gate-run');
-  document.getElementById('st-gate').textContent = STATE.gate.toLowerCase() + ` (${STATE.n}/30)`;
+  document.getElementById('st-gate').textContent = live
+    ? STATE.gate.toLowerCase() + ` (${STATE.n}/30)` : '— (слот пуст)';
   document.getElementById('h-paused').style.display = STATE.paused ? '' : 'none';
   document.getElementById('btn-pause').textContent = STATE.paused ? 'Снять паузу' : 'Пауза';
   document.getElementById('in-risk').value = (STATE.risk*100).toFixed(2);
@@ -426,7 +705,8 @@ async function loadState(){
   sl.querySelectorAll('div[data-s]').forEach(el => el.onclick = () => {
     SYM = el.dataset.s;
     document.getElementById('cur-sym').textContent = SYM;
-    loadChart(true); loadDrawings();
+    document.getElementById('m-sym').value = SYM;   // форма ручной заявки следует за монетой
+    loadChart(true); loadDrawings();                // loadChart(true) = автоцентровка на актуальную цену
   });
 
   document.getElementById('positions').innerHTML = STATE.positions.length
@@ -445,6 +725,8 @@ async function loadState(){
   document.getElementById('journal').textContent = (STATE.journal||[]).slice(-15).reverse().join('\n');
   if (STATE.eq_curve.length)
     eqline.setData(STATE.eq_curve.map((v,i) => ({ time: i+1, value: v })));
+  else
+    eqline.setData([]);
 }
 
 // ---------- журнал сделок ----------
@@ -495,7 +777,7 @@ document.getElementById('f-manual').onsubmit = async (e) => { e.preventDefault()
     price: document.getElementById('m-price').value || null, qty: document.getElementById('m-qty').value || null,
     note: document.getElementById('m-note').value});
   alert('Заявка записана в журнал (заглушка — не исполняется)');
-  e.target.reset(); loadState(); };
+  e.target.reset(); document.getElementById('m-sym').value = SYM; loadState(); };
 
 document.getElementById('m-sym').innerHTML = SYMS17.map(s => `<option>${s}</option>`).join('');
 document.querySelectorAll('.tf').forEach(b => b.onclick = () => {

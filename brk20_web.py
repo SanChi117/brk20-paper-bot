@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-# BRK-20 WEB TERMINAL v2.0 — браузерный терминал для бумажного бота
+# BRK-20 WEB TERMINAL v2.1 — браузерный терминал для бумажного бота
 # Графики (15м/30м/1ч/4ч/1д), рисование и заметки на графике, журнал сделок,
-# управление (пауза/закрыть/отменить/риск/equity), ручные заявки (заглушка).
+# управление (пауза/закрыть/отменить/риск/equity), ручные заявки (заглушка),
+# слоты стратегий (state изолирован per-стратегия), стакан по требованию.
 # Авторизация: токен в URL (?key=...). Только бумажный режим — ключей биржи нет.
 import json, os, time, csv, secrets, subprocess
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -31,7 +32,13 @@ STRATEGIES = [
     {'id': 'brk20', 'name': 'BRK-20', 'kind': 'Пробой 20-дневного хая (4h)',
      'status': 'forward-gate', 'risk': '1%', 'pool': len(SYMS),
      'desc': 'Лонг-пробой Donchian-120 на 4h. Стоп −1.75×ATR, BE на +2R, трейл по пивотам. Форвард-гейт: 30 сделок, PF>1.2.'},
+    {'id': 'slot2', 'name': 'Слот 2', 'kind': '—', 'status': 'empty', 'risk': '—', 'pool': 0,
+     'desc': 'Пустой слот. Когда появится вторая стратегия — у неё будет свой счёт, свой гейт и свой журнал.'},
 ]
+
+EMPTY_STATE = {'eq': 0.0, 'positions': [], 'pendings': [], 'trades': [],
+               'n': 0, 'pf': None, 'wr': 0.0, 'gate': '—', 'paused': False,
+               'risk': 0.01, 'eq_curve': [], 'journal': [], 'started': None}
 
 def load_conf():
     if not os.path.exists(CONF_F):
@@ -85,7 +92,40 @@ def klines(sym, tf, limit=300):
         pass
     return []
 
-def api_state():
+def depth(sym, limit=20):
+    """Стакан по требованию: Binance фьючи, фолбэк Bybit. bids/asks = [[цена, кол-во], ...]"""
+    try:
+        r = requests.get(f'{BASE}/fapi/v1/depth',
+                         params={'symbol': sym, 'limit': limit}, timeout=10)
+        if r.status_code == 200:
+            j = r.json()
+            return {'bids': [[float(p), float(q)] for p, q in j['bids']],
+                    'asks': [[float(p), float(q)] for p, q in j['asks']],
+                    'src': 'binance'}
+    except Exception:
+        pass
+    try:
+        r = requests.get(f'{BYBIT}/v5/market/orderbook',
+                         params={'category': 'linear', 'symbol': sym, 'limit': 25}, timeout=10)
+        j = r.json()
+        if j.get('retCode') == 0:
+            res = j['result']
+            return {'bids': [[float(p), float(q)] for p, q in res['b']],
+                    'asks': [[float(p), float(q)] for p, q in res['a']],
+                    'src': 'bybit'}
+    except Exception:
+        pass
+    return {'bids': [], 'asks': [], 'src': None}
+
+def api_state(strat='brk20'):
+    if strat != 'brk20':
+        # пустой слот: свой «нулевой» стейт, ничего общего с BRK-20
+        out = dict(EMPTY_STATE)
+        out['strategies'] = STRATEGIES
+        out['syms'] = SYMS
+        out['strat'] = strat
+        out['ts'] = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+        return out
     st = load_state()
     trs = st.get('trades', [])
     gw = sum(t['r_usd'] for t in trs if t['r_usd'] > 0)
@@ -114,6 +154,7 @@ def api_state():
             'risk': st.get('risk', 0.01), 'eq_curve': eq_curve,
             'journal': [x.strip() for x in journal_tail],
             'strategies': STRATEGIES, 'syms': SYMS,
+            'strat': 'brk20',
             'started': st.get('started'),
             'ts': datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}
 
@@ -157,7 +198,7 @@ class Handler(BaseHTTPRequestHandler):
             with open(INDEX_F, 'rb') as f:
                 self._send(200, f.read(), 'text/html; charset=utf-8')
         elif u.path == '/api/state':
-            self._send(200, json.dumps(api_state(), ensure_ascii=False))
+            self._send(200, json.dumps(api_state(q.get('strat', ['brk20'])[0]), ensure_ascii=False))
         elif u.path == '/api/klines':
             sym = q.get('symbol', ['SOLUSDT'])[0]
             if sym not in SYMS:
@@ -173,6 +214,13 @@ class Handler(BaseHTTPRequestHandler):
             sym = q.get('symbol', [''])[0]
             d = load_json(DRAW_F, {})
             self._send(200, json.dumps({'symbol': sym, 'items': d.get(sym, [])}, ensure_ascii=False))
+        elif u.path == '/api/depth':
+            sym = q.get('symbol', ['SOLUSDT'])[0]
+            if sym not in SYMS:
+                self._send(400, json.dumps({'error': 'bad symbol'})); return
+            d = depth(sym)
+            d['symbol'] = sym
+            self._send(200, json.dumps(d))
         else:
             self._send(404, json.dumps({'error': 'not found'}))
 
@@ -217,7 +265,8 @@ class Handler(BaseHTTPRequestHandler):
                 item = body.get('item') or {}
                 item['id'] = int(time.time()*1000)
                 item['tf'] = body.get('tf', '1h')
-                if item.get('type') not in ('hline', 'trend', 'note'):
+                if item.get('type') not in ('hline', 'trend', 'note', 'marker',
+                                            'rect', 'brush', 'measure'):
                     self._send(400, json.dumps({'error': 'bad drawing type'})); return
                 items.append(item)
             elif act == 'del':
@@ -249,10 +298,9 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     conf = load_conf()
     Handler.token = conf['token']
-    port = conf.get('port', 8080)
+    port = int(conf.get('port', 8080))
     srv = ThreadingHTTPServer(('0.0.0.0', port), Handler)
-    print(f'BRK-20 WEB TERMINAL v2 на порту {port}', flush=True)
-    print(f'URL для браузера: http://<IP-сервера>:{port}/?key={conf["token"]}', flush=True)
+    print(f'BRK-20 WEB v2.1 на порту {port}')
     srv.serve_forever()
 
 if __name__ == '__main__':
