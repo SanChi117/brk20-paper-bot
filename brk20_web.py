@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-# BRK-20 WEB TERMINAL v2.1 — браузерный терминал для бумажного бота
+# BRK-20 WEB TERMINAL v3 — браузерный терминал для бумажного бота (лейаут биржи)
 # Графики (15м/30м/1ч/4ч/1д), рисование и заметки на графике, журнал сделок,
 # управление (пауза/закрыть/отменить/риск/equity), ручные заявки (заглушка),
-# слоты стратегий (state изолирован per-стратегия), стакан по требованию.
+# слоты стратегий (state изолирован per-стратегия), котировки пула 24ч,
+# постоянные стакан и лента сделок по выбранной монете.
 # Авторизация: токен в URL (?key=...). Только бумажный режим — ключей биржи нет.
 import json, os, time, csv, secrets, subprocess
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -147,7 +148,7 @@ def donchian(sym, side='long', both=False):
     return {'pts': hi20[-150:], 'atr': atr, 'line': 'HI20'}
 
 def depth(sym, limit=20):
-    """Стакан по требованию: Binance фьючи, фолбэк Bybit. bids/asks = [[цена, кол-во], ...]"""
+    """Стакан: Binance фьючи, фолбэк Bybit. bids/asks = [[цена, кол-во], ...]"""
     try:
         r = requests.get(f'{BASE}/fapi/v1/depth',
                          params={'symbol': sym, 'limit': limit}, timeout=5)
@@ -170,6 +171,74 @@ def depth(sym, limit=20):
     except Exception:
         pass
     return {'bids': [], 'asks': [], 'src': None}
+
+_Q_CACHE = {'ts': 0.0, 'rows': []}
+
+def quotes():
+    """Котировки пула: последняя цена, % за 24ч, OHLC 24ч и оборот — для сайдбара
+    и стат-полосы над графиком. Кэш 5с: фронт опрашивает часто, биржу не дёргаем."""
+    if time.time() - _Q_CACHE['ts'] < 5 and _Q_CACHE['rows']:
+        return _Q_CACHE['rows']
+    rows = []
+    try:
+        r = requests.get(f'{BASE}/fapi/v1/ticker/24hr',
+                         params={'symbols': json.dumps(SYMS)}, timeout=6)
+        if r.status_code == 200:
+            for x in r.json():
+                rows.append({'sym': x['symbol'], 'px': float(x['lastPrice']),
+                             'chg': float(x['priceChangePercent']),
+                             'o': float(x['openPrice']), 'h': float(x['highPrice']),
+                             'l': float(x['lowPrice']), 'vol': float(x['quoteVolume']),
+                             'src': 'binance'})
+    except Exception:
+        pass
+    if not rows:
+        try:
+            r = requests.get(f'{BYBIT}/v5/market/tickers',
+                             params={'category': 'linear'}, timeout=8)
+            j = r.json()
+            if j.get('retCode') == 0:
+                for x in j['result']['list']:
+                    if x['symbol'] in SYMS:
+                        rows.append({'sym': x['symbol'], 'px': float(x['lastPrice']),
+                                     'chg': float(x.get('price24hPcnt') or 0) * 100,
+                                     'o': float(x.get('prevPrice24h') or 0),
+                                     'h': float(x['highPrice24h']),
+                                     'l': float(x['lowPrice24h']),
+                                     'vol': float(x['turnover24h']), 'src': 'bybit'})
+        except Exception:
+            pass
+    if rows:
+        rows.sort(key=lambda x: SYMS.index(x['sym']) if x['sym'] in SYMS else 99)
+        _Q_CACHE['ts'] = time.time()
+        _Q_CACHE['rows'] = rows
+    return _Q_CACHE['rows']
+
+def trades_tape(sym, limit=30):
+    """Лента последних сделок по монете: цена, кол-во, время, сторона
+    (side=buy — покупка агрессором, рисуем зелёным; sell — красным)."""
+    try:
+        r = requests.get(f'{BASE}/fapi/v1/trades',
+                         params={'symbol': sym, 'limit': limit}, timeout=5)
+        if r.status_code == 200:
+            return {'trades': [{'px': float(x['price']), 'q': float(x['qty']),
+                                't': int(x['time']),
+                                'side': 'sell' if x['isBuyerMaker'] else 'buy'}
+                               for x in reversed(r.json())], 'symbol': sym, 'src': 'binance'}
+    except Exception:
+        pass
+    try:
+        r = requests.get(f'{BYBIT}/v5/market/recent-trade',
+                         params={'category': 'linear', 'symbol': sym, 'limit': limit}, timeout=5)
+        j = r.json()
+        if j.get('retCode') == 0:
+            return {'trades': [{'px': float(x['price']), 'q': float(x['size']),
+                                't': int(x['time']),
+                                'side': 'buy' if x['side'] == 'Buy' else 'sell'}
+                               for x in j['result']['list']], 'symbol': sym, 'src': 'bybit'}
+    except Exception:
+        pass
+    return {'trades': [], 'symbol': sym, 'src': None}
 
 def api_state(strat='brk20'):
     ts = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
@@ -284,6 +353,13 @@ class Handler(BaseHTTPRequestHandler):
             d = depth(sym)
             d['symbol'] = sym
             self._send(200, json.dumps(d))
+        elif u.path == '/api/quotes':
+            self._send(200, json.dumps({'rows': quotes()}))
+        elif u.path == '/api/trades':
+            sym = q.get('symbol', ['SOLUSDT'])[0]
+            if sym not in SYMS:
+                self._send(400, json.dumps({'error': 'bad symbol'})); return
+            self._send(200, json.dumps(trades_tape(sym)))
         elif u.path == '/api/indicator':
             sym = q.get('symbol', ['SOLUSDT'])[0]
             if sym not in SYMS:
@@ -376,7 +452,7 @@ def main():
     Handler.token = conf['token']
     port = conf.get('port', 8080)
     srv = ThreadingHTTPServer(('0.0.0.0', port), Handler)
-    print(f'BRK-20 WEB TERMINAL v2 на порту {port}', flush=True)
+    print(f'BRK-20 WEB TERMINAL v3 на порту {port}', flush=True)
     print(f'URL для браузера: http://<IP-сервера>:{port}/?key={conf["token"]}', flush=True)
     srv.serve_forever()
 
