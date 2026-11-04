@@ -168,6 +168,7 @@
       <button id="dr-off" class="act" title="Выключить рисование">✕</button>
       <span class="sep"></span>
       <button id="btn-depth" title="Стакан по текущей монете">▦ Стакан</button>
+      <button id="btn-ind" title="Индикатор стратегии: линия hi20 — хай 20 дней, пробой которого даёт вход">∿ HI20</button>
       <button id="btn-recenter" title="К актуальной цене">⟶</button>
       <span style="flex:1"></span>
       <span class="stat" id="cur-info"></span>
@@ -355,10 +356,37 @@ function addLine(price, color, title, style=LightweightCharts.LineStyle.Solid){
 
 let barTimes = [];  // время баров текущего графика (сек), для привязки рисунков
 let candleData = [];
+let chartReq = 0;   // счётчик запросов — устаревшие ответы выбрасываем
+
+// ---------- индикатор стратегии (hi20) ----------
+let indSeries = null, indReq = 0;
+let IND_ON = localStorage.getItem('brk-ind') !== '0';
+function removeInd(){ if (indSeries){ chart.removeSeries(indSeries); indSeries = null; } }
+async function loadIndicator(){
+  removeInd();
+  document.getElementById('btn-ind').classList.toggle('act', IND_ON);
+  if (!IND_ON) return;
+  const my = ++indReq, sym = SYM;
+  const d = await api(`/api/indicator?symbol=${sym}`);
+  if (my !== indReq || sym !== SYM || !d.hi20 || !d.hi20.length) return;
+  indSeries = chart.addLineSeries({ color:'#f0b90b', lineWidth:1,
+    lineType:LightweightCharts.LineType.WithSteps, lineStyle:LightweightCharts.LineStyle.Solid,
+    priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'HI20' });
+  indSeries.setData(d.hi20.map(([t, v]) => ({ time: t, value: v })));
+  document.getElementById('cur-info').textContent =
+    'HI20 ' + fmt(d.hi20[d.hi20.length-1][1]) + (d.atr ? ' · ATR ' + fmt(d.atr) : '');
+}
+document.getElementById('btn-ind').onclick = () => {
+  IND_ON = !IND_ON;
+  localStorage.setItem('brk-ind', IND_ON ? '1' : '0');
+  if (!IND_ON) document.getElementById('cur-info').textContent = '';
+  loadIndicator();
+};
 
 async function loadChart(scrollEnd){
-  const d = await api(`/api/klines?symbol=${SYM}&tf=${TF}`);
-  if (!d.candles) return;
+  const my = ++chartReq, sym = SYM, tf = TF;
+  const d = await api(`/api/klines?symbol=${sym}&tf=${tf}`);
+  if (my !== chartReq || !d.candles) return;   // пока ждали — переключили монету/ТФ, ответ мусор
   candleData = d.candles;
   barTimes = d.candles.map(x => x.t);
   candles.setData(d.candles.map(x => ({ time:x.t, open:x.o, high:x.h, low:x.l, close:x.c })));
@@ -382,6 +410,7 @@ async function loadChart(scrollEnd){
   }
   renderDrawings();
   candles.setMarkers(chartMarkers);
+  loadIndicator();   // линия hi20 поверх — «индикатор» стратегии
   if (scrollEnd !== false) {
     // автоцентровка на актуальную цену: показываем последние ~90 баров
     const n = d.candles.length;
@@ -675,9 +704,17 @@ async function renderDepth(){
 }
 
 // ---------- состояние ----------
+let stateBusy = false;
 async function loadState(){
-  STATE = await api('/api/state?strat=' + STRAT);
-  if (STATE.error) { document.body.innerHTML = '<h2 style="padding:40px">Неверный ключ. Открой ссылку из установщика.</h2>'; throw 0; }
+  if (stateBusy) return;   // предыдущий ответ ещё едет — не плодим очередь
+  stateBusy = true;
+  try {
+    STATE = await api('/api/state?strat=' + STRAT);
+    if (STATE.error) { document.body.innerHTML = '<h2 style="padding:40px">Неверный ключ. Открой ссылку из установщика.</h2>'; throw 0; }
+    renderState();
+  } finally { stateBusy = false; }
+}
+function renderState(){
   const live = STRAT === 'brk20';
   document.getElementById('h-eq').textContent = live ? STATE.eq.toFixed(2) + '$' : '—';
   document.getElementById('h-n').textContent = live ? STATE.n + '/30' : '—';

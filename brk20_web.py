@@ -67,12 +67,25 @@ def save_json(path, obj):
         json.dump(obj, f, ensure_ascii=False)
     os.replace(tmp, path)
 
+_KL_CACHE = {}   # (sym, tf, limit) -> (ts, rows): кэш, чтобы переключения были мгновенными
+
 def klines(sym, tf, limit=300):
+    key = (sym, tf, limit)
+    hit = _KL_CACHE.get(key)
+    if hit and time.time() - hit[0] < 20:
+        return hit[1]
+    rows = _fetch_klines(sym, tf, limit)
+    if rows:
+        _KL_CACHE[key] = (time.time(), rows)
+        return rows
+    return hit[1] if hit else []   # биржа лежит — отдаём последнее живое, а не пустоту
+
+def _fetch_klines(sym, tf, limit=300):
     now = int(time.time()*1000)
     biv, bbiv, ms = TFS[tf]
     try:
         r = requests.get(f'{BASE}/fapi/v1/klines',
-                         params={'symbol': sym, 'interval': biv, 'limit': limit}, timeout=15)
+                         params={'symbol': sym, 'interval': biv, 'limit': limit}, timeout=6)
         if r.status_code == 200:
             out = [(int(x[0]), float(x[1]), float(x[2]), float(x[3]), float(x[4])) for x in r.json()]
             return [x for x in out if x[0] + ms <= now]
@@ -82,7 +95,7 @@ def klines(sym, tf, limit=300):
     try:
         r = requests.get(f'{BYBIT}/v5/market/kline',
                          params={'category': 'linear', 'symbol': sym, 'interval': bbiv,
-                                 'limit': min(limit, 1000)}, timeout=15)
+                                 'limit': min(limit, 1000)}, timeout=6)
         j = r.json()
         if j.get('retCode') == 0:
             out = [(int(x[0]), float(x[1]), float(x[2]), float(x[3]), float(x[4]))
@@ -92,11 +105,28 @@ def klines(sym, tf, limit=300):
         pass
     return []
 
+def donchian(sym):
+    """Индикатор стратегии: линия hi20 (макс хаёв за 120 баров 4h = 20 дней) + ATR(14) Wilder.
+    Бот входит, когда 4h-закрытие пробивает эту линию сверху."""
+    rows = klines(sym, '4h', 300)
+    if len(rows) < 130:
+        return {'hi20': [], 'atr': None}
+    highs = [r[2] for r in rows]
+    hi20 = [[rows[i][0] // 1000, max(highs[i-120:i])] for i in range(120, len(rows))]
+    atr = None
+    trs = [max(rows[i][2]-rows[i][3], abs(rows[i][2]-rows[i-1][4]), abs(rows[i][3]-rows[i-1][4]))
+           for i in range(1, len(rows))]
+    if len(trs) >= 14:
+        atr = sum(trs[:14]) / 14
+        for tr in trs[14:]:
+            atr = (atr * 13 + tr) / 14
+    return {'hi20': hi20[-150:], 'atr': round(atr, 8) if atr else None}
+
 def depth(sym, limit=20):
     """Стакан по требованию: Binance фьючи, фолбэк Bybit. bids/asks = [[цена, кол-во], ...]"""
     try:
         r = requests.get(f'{BASE}/fapi/v1/depth',
-                         params={'symbol': sym, 'limit': limit}, timeout=10)
+                         params={'symbol': sym, 'limit': limit}, timeout=5)
         if r.status_code == 200:
             j = r.json()
             return {'bids': [[float(p), float(q)] for p, q in j['bids']],
@@ -106,7 +136,7 @@ def depth(sym, limit=20):
         pass
     try:
         r = requests.get(f'{BYBIT}/v5/market/orderbook',
-                         params={'category': 'linear', 'symbol': sym, 'limit': 25}, timeout=10)
+                         params={'category': 'linear', 'symbol': sym, 'limit': 25}, timeout=5)
         j = r.json()
         if j.get('retCode') == 0:
             res = j['result']
@@ -221,6 +251,13 @@ class Handler(BaseHTTPRequestHandler):
             d = depth(sym)
             d['symbol'] = sym
             self._send(200, json.dumps(d))
+        elif u.path == '/api/indicator':
+            sym = q.get('symbol', ['SOLUSDT'])[0]
+            if sym not in SYMS:
+                self._send(400, json.dumps({'error': 'bad symbol'})); return
+            d = donchian(sym)
+            d['symbol'] = sym
+            self._send(200, json.dumps(d))
         else:
             self._send(404, json.dumps({'error': 'not found'}))
 
@@ -298,9 +335,10 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     conf = load_conf()
     Handler.token = conf['token']
-    port = int(conf.get('port', 8080))
+    port = conf.get('port', 8080)
     srv = ThreadingHTTPServer(('0.0.0.0', port), Handler)
-    print(f'BRK-20 WEB v2.1 на порту {port}')
+    print(f'BRK-20 WEB TERMINAL v2 на порту {port}', flush=True)
+    print(f'URL для браузера: http://<IP-сервера>:{port}/?key={conf["token"]}', flush=True)
     srv.serve_forever()
 
 if __name__ == '__main__':
