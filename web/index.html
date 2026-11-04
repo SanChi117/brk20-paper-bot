@@ -115,6 +115,7 @@ async function loadChart(){
   candles.setData(d.candles.map(x => ({ time:x.t, open:x.o, high:x.h, low:x.l, close:x.c })));
   if (d.candles.length) document.getElementById('cur-px').textContent = 'посл. ' + fmt(d.candles[d.candles.length-1].c);
   clearLines();
+  const markers = [];
   if (STATE) {
     for (const p of STATE.positions.filter(p => p.sym === SYM)) {
       addLine(p.entry, '#2962ff', 'вход');
@@ -125,6 +126,7 @@ async function loadChart(){
       addLine(p.entry, '#f0b90b', 'buy-stop', LightweightCharts.LineStyle.Dashed);
       addLine(p.stop, '#ef5350', 'SL если вход', LightweightCharts.LineStyle.Dotted);
     }
+    for (const t of (STATE.trades||[]).filter(t => t.sym === SYM).slice(-20)) { /* метки по времени недоступны без t */ }
   }
   chart.timeScale().fitContent();
 }
@@ -144,6 +146,7 @@ async function loadState(){
   document.getElementById('h-paused').style.display = STATE.paused ? '' : 'none';
   document.getElementById('btn-pause').textContent = STATE.paused ? 'Снять паузу' : 'Пауза';
 
+  // список символов
   const acts = {};
   STATE.positions.forEach(p => acts[p.sym] = 'p');
   STATE.pendings.forEach(p => { if (!acts[p.sym]) acts[p.sym] = 'o'; });
@@ -152,20 +155,25 @@ async function loadState(){
     .map(s => `<div data-s="${s}" class="${s===SYM?'sel':''}"><span>${s.replace('USDT','')}</span>${acts[s]?`<span class="dot ${acts[s]}"></span>`:''}</div>`).join('');
   sl.querySelectorAll('div[data-s]').forEach(el => el.onclick = () => { SYM = el.dataset.s; document.getElementById('cur-sym').textContent = SYM; loadChart(); loadState(); });
 
+  // позиции
   document.getElementById('positions').innerHTML = STATE.positions.length
     ? '<table><tr><th>Монета</th><th>Вход</th><th>Стоп</th><th>Стадия</th><th></th></tr>' +
       STATE.positions.map(p => `<tr><td>${p.sym}</td><td>${fmt(p.entry)}</td><td>${fmt(p.stop)}</td><td>${p.stage===0?'до BE':'трейл'}</td><td><button class="warn" onclick="closePos('${p.sym}')">Закрыть</button></td></tr>`).join('') + '</table>'
     : '<div style="padding:10px;color:var(--dim)">пусто</div>';
+  // заявки
   document.getElementById('pendings').innerHTML = STATE.pendings.length
     ? '<table><tr><th>Монета</th><th>Buy-stop</th><th>Стоп</th><th></th></tr>' +
       STATE.pendings.map(p => `<tr><td>${p.sym}</td><td>${fmt(p.entry)}</td><td>${fmt(p.stop)}</td><td><button class="warn" onclick="cancelPend('${p.sym}')">Отменить</button></td></tr>`).join('') + '</table>'
     : '<div style="padding:10px;color:var(--dim)">пусто</div>';
+  // сделки
   const tt = (STATE.trades||[]).slice(-15).reverse();
   document.getElementById('trades').innerHTML = tt.length
     ? '<table><tr><th>Монета</th><th>R</th><th>$</th><th>Выход</th></tr>' +
       tt.map(t => `<tr><td>${t.sym}</td><td class="${t.r>0?'pos-r':'neg-r'}">${t.r>0?'+':''}${t.r.toFixed(2)}R</td><td>${t.r_usd.toFixed(2)}</td><td>${t.out}</td></tr>`).join('') + '</table>'
     : '<div style="padding:10px;color:var(--dim)">сделок ещё нет</div>';
+  // журнал
   document.getElementById('journal').textContent = (STATE.journal||[]).slice(-15).reverse().join('\n');
+  // equity
   if (STATE.eq_curve.length)
     eqline.setData(STATE.eq_curve.map((v,i) => ({ time: i+1, value: v })));
 }
