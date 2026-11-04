@@ -128,6 +128,8 @@
     <select id="strat" title="Слот стратегии">
       <option value="brk20">BRK-20</option>
       <option value="slot2">Слот 2 (пусто)</option>
+      <option value="slot3">Слот 3 (пусто)</option>
+      <option value="slot4">Слот 4 (пусто)</option>
     </select>
   </span>
   <span class="stat">Риск<b id="h-risk">1%</b></span>
@@ -229,7 +231,11 @@
   </div>
   <div class="card" style="opacity:.5">
     <h3>Слот 2 <span class="badge">пусто</span></h3>
-    <div class="kv">Сюда встанет следующая стратегия — отдельный state, отдельный гейт, ничего не смешивается с BRK-20.</div>
+    <div class="kv">Кандидат: <b>BRK-20 SHORT</b> (зеркало пробоя 20-дневного лоу). Первичный бэктест: 117 сделок, PF 1.834, стресс 1.785. Ждёт решения → свой бот, свой гейт.</div>
+  </div>
+  <div class="card" style="opacity:.5">
+    <h3>Слоты 3–4 <span class="badge">пусто</span></h3>
+    <div class="kv">Резерв под следующие стратегии — каждая со своим счётом, гейтом и журналом, ничего не смешивается.</div>
   </div>
 </div>
 
@@ -271,7 +277,13 @@ const ctl = (body) => post('/api/control', body);
 
 let SYM = 'SOLUSDT', TF = '1h', STATE = null, DRAWINGS = [], DRAWMODE = null, trendFirst = null;
 let STRAT = 'brk20';
-const fmt = (x) => x == null ? '—' : (x >= 100 ? x.toFixed(2) : x.toPrecision(4));
+const fmt = (x) => {
+  if (x == null || isNaN(x)) return '—';
+  const a = Math.abs(x);
+  const dec = a >= 1000 ? 1 : a >= 100 ? 2 : a >= 1 ? 4 : a >= 0.1 ? 5 : a >= 0.001 ? 6 : 8;
+  return x.toFixed(dec);
+};
+const pxDec = (p) => p >= 1000 ? 1 : p >= 100 ? 2 : p >= 1 ? 4 : p >= 0.1 ? 5 : p >= 0.001 ? 6 : 8;
 const fmtT = (ms) => ms ? new Date(ms).toISOString().slice(5,16).replace('T',' ') : '—';
 const SYMS17 = ['SOLUSDT','BNBUSDT','XRPUSDT','ADAUSDT','AVAXUSDT','SUIUSDT','APTUSDT','NEARUSDT','LINKUSDT','AAVEUSDT','ARBUSDT','OPUSDT','DOGEUSDT','TAOUSDT','ONDOUSDT','INJUSDT','SEIUSDT'];
 const TFMS = {'15m':900000,'30m':1800000,'1h':3600000,'4h':14400000,'1d':86400000};
@@ -369,9 +381,12 @@ async function loadIndicator(){
   const my = ++indReq, sym = SYM;
   const d = await api(`/api/indicator?symbol=${sym}`);
   if (my !== indReq || sym !== SYM || !d.hi20 || !d.hi20.length) return;
+  const lp = candleData.length ? candleData[candleData.length-1].c : 1;
+  const dec = pxDec(lp);
   indSeries = chart.addLineSeries({ color:'#f0b90b', lineWidth:1,
     lineType:LightweightCharts.LineType.WithSteps, lineStyle:LightweightCharts.LineStyle.Solid,
-    priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'HI20' });
+    priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'HI20',
+    priceFormat: { type:'price', precision: dec, minMove: 1/Math.pow(10, dec) } });
   indSeries.setData(d.hi20.map(([t, v]) => ({ time: t, value: v })));
   document.getElementById('cur-info').textContent =
     'HI20 ' + fmt(d.hi20[d.hi20.length-1][1]) + (d.atr ? ' · ATR ' + fmt(d.atr) : '');
@@ -389,6 +404,10 @@ async function loadChart(scrollEnd){
   if (my !== chartReq || !d.candles) return;   // пока ждали — переключили монету/ТФ, ответ мусор
   candleData = d.candles;
   barTimes = d.candles.map(x => x.t);
+  // точность шкалы под монету: SEI 0.04879, а не 0.049
+  const lp = d.candles.length ? d.candles[d.candles.length-1].c : 1;
+  const dec = pxDec(lp);
+  candles.applyOptions({ priceFormat: { type:'price', precision: dec, minMove: 1/Math.pow(10, dec) } });
   candles.setData(d.candles.map(x => ({ time:x.t, open:x.o, high:x.h, low:x.l, close:x.c })));
   if (d.candles.length) document.getElementById('cur-px').textContent = 'посл. ' + fmt(d.candles[d.candles.length-1].c);
   clearLines();
