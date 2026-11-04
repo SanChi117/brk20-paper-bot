@@ -11,7 +11,7 @@ sleep 3
 systemctl status brk20-web --no-pager | head -12
 echo "---"
 TOKEN=$(python3 -c "import json;print(json.load(open('/root/brk20/web_config.json'))['token'])")
-IP=$(curl -s ifconfig.me || hostname -I | awk '{print $1}')
+IP=$(curl -4 -s ifconfig.me || hostname -I | tr ' ' '\n' | grep -m1 '\.')
 echo ""
 echo "ОТКРОЙ В БРАУЗЕРЕ:  http://$IP:8080/?key=$TOKEN"
 echo "(эта ссылка — единственный ключ к терминалу, сохрани её)"
