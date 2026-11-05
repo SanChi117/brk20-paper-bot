@@ -82,6 +82,18 @@
   #qlist .dot { width:6px; height:6px; border-radius:50%; display:inline-block; }
   .dot.p { background:var(--green); } .dot.o { background:var(--amber); }
   .up { color:var(--green); } .dn { color:var(--red); }
+  #qlist .qd { display:flex; gap:10px; padding:0 12px 5px; font-size:10px; color:var(--dim); cursor:pointer; margin-top:-3px; }
+  #qlist .qd b { font-weight:600; }
+  #qlist .qd .near { color:var(--amber); }
+  #toast { position:fixed; top:54px; left:50%; transform:translateX(-50%); z-index:100; display:none;
+           background:var(--panel); border:1px solid var(--accent); border-radius:6px; padding:10px 18px;
+           font-size:13px; font-weight:600; box-shadow:0 8px 30px rgba(0,0,0,.5); }
+  #chartwrap2 { display:none; border-top:1px solid var(--border); flex:0 0 38%; min-height:140px; }
+  #chartwrap2.on { display:flex; flex-direction:column; }
+  #toolbar2 { display:flex; gap:5px; padding:4px 10px; align-items:center; border-bottom:1px solid var(--border); flex:none; }
+  #toolbar2 .ss { color:var(--dim); font-size:10px; text-transform:uppercase; letter-spacing:.5px; }
+  #chart2 { flex:1; min-height:0; position:relative; }
+  #bt-tabs .right { margin-left:auto; }
 
   /* центр */
   #center { display:flex; flex-direction:column; gap:6px; min-width:0; }
@@ -184,6 +196,7 @@
   <span class="stat">Сделок<b id="h-n">—</b></span>
   <span class="stat">PF<b id="h-pf">—</b></span>
   <span class="stat">WR<b id="h-wr">—</b></span>
+  <span class="stat" title="Суммарный результат ручных бумажных сделок">Ручные<b id="h-man">—</b></span>
   <span id="h-gate" class="badge gate-run">—</span>
   <span id="h-paused" class="badge paused" style="display:none">ПАУЗА</span>
   <span style="flex:1"></span>
@@ -210,6 +223,7 @@
   <button data-v="v-strat">Стратегии</button>
   <button data-v="v-admin">Настройки</button>
 </nav>
+<div id="toast"></div>
 
 <!-- ===================== ТЕРМИНАЛ ===================== -->
 <main class="view cur" id="v-term">
@@ -248,10 +262,21 @@
         <button id="btn-ind" title="Индикатор стратегии: граница Donchian-120 (HI20 лонг / LO20 шорт), пробой которой даёт вход">∿ HI20</button>
         <button id="btn-both" title="Обе границы канала сразу: HI20 сверху и LO20 снизу — видно, куда ближе цена">⇕ Канал</button>
         <button id="btn-recenter" title="К актуальной цене">⟶</button>
+        <span class="sep"></span>
+        <button id="btn-2tf" title="Второй график этой же монеты на другом ТФ — контекст без переключений">⧉ 2ТФ</button>
       </div>
       <div id="chartwrap">
         <div id="chart"></div>
         <div id="ctxmenu" style="display:none;position:fixed;z-index:50;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:4px;min-width:200px;box-shadow:0 6px 24px rgba(0,0,0,.4)"></div>
+      </div>
+      <div id="chartwrap2">
+        <div id="toolbar2">
+          <span class="ss">2-й ТФ</span>
+          <button class="tf2" data-tf="15m">15м</button><button class="tf2" data-tf="30m">30м</button>
+          <button class="tf2" data-tf="1h">1ч</button><button class="tf2 act" data-tf="4h">4ч</button>
+          <button class="tf2" data-tf="1d">1д</button>
+        </div>
+        <div id="chart2"></div>
       </div>
     </div>
     <div class="panel" id="bottom">
@@ -262,6 +287,9 @@
         <button data-bt="bt-jr">Журнал</button>
         <button data-bt="bt-dr">Рисунки</button>
         <button data-bt="bt-eq">Equity</button>
+        <a id="bt-csv" class="right" href="#" title="Скачать сделки (бот выбранного слота + ручные) в CSV"
+           style="align-self:center;color:var(--dim);font-size:11px;font-weight:600;text-transform:uppercase;
+                  letter-spacing:.5px;text-decoration:none;padding:7px 12px">⬇ CSV</a>
       </div>
       <div class="bt-page cur" id="bt-pos"><div id="positions"></div></div>
       <div class="bt-page" id="bt-pend"><div id="pendings"></div></div>
@@ -279,7 +307,7 @@
         <button data-t="limit" class="cur">Лимит</button>
         <button data-t="market">Маркет</button>
         <button data-t="stop">Стоп</button>
-        <span class="badge paused" style="margin-left:auto">заглушка</span>
+        <span class="badge gate-run" style="margin-left:auto">бумажная</span>
       </div>
       <form id="f-manual">
         <input type="hidden" id="m-sym" value="SOLUSDT">
@@ -291,6 +319,8 @@
         <input id="m-price" type="number" step="any" placeholder="цена заявки">
         <label>Размер, $</label>
         <input id="m-qty" type="number" step="any" placeholder="—">
+        <label>Стоп (необязательно)</label>
+        <input id="m-stop" type="number" step="any" placeholder="—">
         <label>Комментарий</label>
         <input id="m-note" placeholder="почему вход">
         <div class="row2">
@@ -421,6 +451,7 @@ document.getElementById('strat').onchange = (e) => {
   indLabel();
   loadState().then(() => loadChart(false));   // линии позиций/заявок — только активного слота
   if (document.getElementById('v-trades').classList.contains('cur')) renderTradebook();
+  syncCsv();
 };
 
 // ---------- вкладки ----------
@@ -470,6 +501,12 @@ function applyChartTheme(){
   eqc.applyOptions({ layout:{background:{color:c.bg}, textColor:c.txt},
     grid:{horzLines:{color:c.grid}}, rightPriceScale:{borderColor:c.border} });
   eqline.applyOptions({ lineColor:c.accent, topColor:c.accent+'40', bottomColor:c.accent+'00' });
+  if (chart2){
+    chart2.applyOptions({ layout:{background:{color:c.bg}, textColor:c.txt},
+      grid:{vertLines:{color:c.grid}, horzLines:{color:c.grid}},
+      timeScale:{borderColor:c.border}, rightPriceScale:{borderColor:c.border} });
+    candles2.applyOptions({ upColor:up, downColor:dn, wickUpColor:up, wickDownColor:dn });
+  }
 }
 
 let priceLines = [], drawSeries = [], chartMarkers = [];
@@ -668,7 +705,6 @@ function renderDrawList(){
     ? mine.map(x => `<div><span>${ICONS[x.type]||x.type} ${fmt(x.price || x.p1 || 0)} ${x.text ? '· ' + x.text.slice(0,30) : ''}</span><button class="warn" onclick="delDraw(${x.id})">✕</button></div>`).join('')
     : '<div class="empty">пусто — выбери инструмент и кликни на график (или ПКМ)</div>';
 }
-
 async function delDraw(id){
   await post('/api/drawings', {symbol: SYM, action:'del', id});
   await loadDrawings(); loadChart(false);
@@ -833,6 +869,51 @@ function recenter(){
 }
 document.getElementById('btn-recenter').onclick = recenter;
 
+// ---------- второй ТФ (⧉ 2ТФ): та же монета, другой таймфрейм рядом ----------
+let TF2 = '4h', chart2 = null, candles2 = null, candleData2 = [], chart2Req = 0;
+function initChart2(){
+  const c = themeColors();
+  chart2 = LightweightCharts.createChart(document.getElementById('chart2'), {
+    layout: { background:{color:c.bg}, textColor:'#8b95a5' },
+    grid: { vertLines:{color:c.grid}, horzLines:{color:c.grid} },
+    timeScale: { timeVisible:true, secondsVisible:false, borderColor:c.border },
+    rightPriceScale: { borderColor:c.border },
+    crosshair: { mode: 0 },
+  });
+  const up = getComputedStyle(document.body).getPropertyValue('--green').trim();
+  const dn = getComputedStyle(document.body).getPropertyValue('--red').trim();
+  candles2 = chart2.addCandlestickSeries({ upColor:up, downColor:dn, borderVisible:false,
+    wickUpColor:up, wickDownColor:dn });
+}
+async function loadChart2(){
+  if (!chart2) return;
+  const my = ++chart2Req, sym = SYM, tf = TF2;
+  const d = await api(`/api/klines?symbol=${sym}&tf=${tf}`);
+  if (my !== chart2Req || !d.candles) return;
+  candleData2 = d.candles;
+  const lp = d.candles.length ? d.candles[d.candles.length-1].c : 1;
+  const dec = pxDec(lp);
+  candles2.applyOptions({ priceFormat: { type:'price', precision: dec, minMove: 1/Math.pow(10, dec) } });
+  candles2.setData(d.candles.map(x => ({ time:x.t, open:x.o, high:x.h, low:x.l, close:x.c })));
+  const n = d.candles.length;
+  chart2.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 90), to: n + 6 });
+}
+document.getElementById('btn-2tf').onclick = () => {
+  const w = document.getElementById('chartwrap2');
+  const on = !w.classList.contains('on');
+  w.classList.toggle('on', on);
+  document.getElementById('btn-2tf').classList.toggle('act', on);
+  localStorage.setItem('brk-2tf', on ? '1' : '0');
+  if (on && !chart2) initChart2();
+  if (on) loadChart2();
+  setTimeout(resizeCharts, 30);
+};
+document.querySelectorAll('.tf2').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tf2').forEach(x => x.classList.remove('act'));
+  b.classList.add('act'); TF2 = b.dataset.tf;
+  loadChart2();
+});
+
 // ---------- котировки пула (сайдбар + стат-полоса) ----------
 async function loadQuotes(){
   const d = await api('/api/quotes');
@@ -855,6 +936,18 @@ function tickLiveCandle(){
     lastBoundaryFetch = nowSec;
     loadChart(false);   // пересекли границу бара — подтянуть новую свечу с сервера
   }
+  // то же для второго ТФ, если панель открыта
+  if (candles2 && candleData2.length) {
+    const tf2Sec = TFMS[TF2] / 1000;
+    const bucket2 = Math.floor(nowSec / tf2Sec) * tf2Sec;
+    const last2 = candleData2[candleData2.length - 1];
+    if (last2.t === bucket2) {
+      last2.h = Math.max(last2.h, q.px); last2.l = Math.min(last2.l, q.px); last2.c = q.px;
+      try { candles2.update({ time: last2.t, open: last2.o, high: last2.h, low: last2.l, close: last2.c }); } catch(e){}
+    } else if (last2.t < bucket2) {
+      loadChart2();
+    }
+  }
 }
 function renderQlist(){
   const el = document.getElementById('qlist');
@@ -863,17 +956,23 @@ function renderQlist(){
     const q = bySym[s];
     const px = q ? fmt(q.px) : '—';
     const chg = q ? `<span class="qc ${q.chg>=0?'up':'dn'}">${q.chg>=0?'+':''}${q.chg.toFixed(2)}%</span>` : '<span class="qc">—</span>';
-    return `<div class="qrow ${s===SYM?'sel':''}" data-s="${s}">
+    // дистанция до границ канала 4h: сколько % цене идти до HI20 (вверх) и LO20 (вниз)
+    const dist = (q && q.d_hi != null)
+      ? `<div class="qd" title="Дистанция до границ канала 4h: до HI20 вверх / до LO20 вниз">` +
+        `<span>⇈<b class="${q.d_hi <= 1 ? 'near' : ''}">${q.d_hi.toFixed(2)}%</b></span>` +
+        `<span>⇊<b class="${q.d_lo >= -1 ? 'near' : ''}">${q.d_lo.toFixed(2)}%</b></span></div>`
+      : '';
+    return `<div class="qitem" data-s="${s}"><div class="qrow ${s===SYM?'sel':''}">
       <span class="qn">${s.replace('USDT','')}${ACTS[s]?`<i class="dot ${ACTS[s]}"></i>`:''}</span>
-      <span class="qp">${px}</span>${chg}</div>`;
+      <span class="qp">${px}</span>${chg}</div>${dist}</div>`;
   }).join('');
-  el.querySelectorAll('.qrow').forEach(row => row.onclick = () => {
+  el.querySelectorAll('.qitem').forEach(row => row.onclick = () => {
     SYM = row.dataset.s;
     document.getElementById('cur-sym').textContent = SYM;
     document.getElementById('m-sym').value = SYM;
     document.getElementById('m-symview').value = SYM;
     renderQlist(); renderStatstrip();
-    loadChart(true); loadDrawings(); renderBook(); renderTape();
+    loadChart(true); loadDrawings(); renderBook(); renderTape(); loadChart2();
   });
 }
 function renderStatstrip(){
@@ -921,6 +1020,55 @@ async function renderTape(){
     : '<div class="empty">нет данных</div>';
 }
 
+// ---------- алерты на события: звук + тост + мигание заголовка ----------
+let audioCtx = null;
+function beep(){
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.connect(g); g.connect(audioCtx.destination);
+    o.frequency.value = 880; g.gain.value = 0.15;
+    o.start(); g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.6);
+    o.stop(audioCtx.currentTime + 0.6);
+  } catch(e){}
+}
+let toastTimer = null;
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.style.display = 'none', 6000);
+}
+let titleTimer = null;
+function flashTitle(msg){
+  clearInterval(titleTimer);
+  let on = false, n = 0;
+  titleTimer = setInterval(() => {
+    document.title = (on = !on) ? '🔔 ' + msg : 'BRK-20 Терминал';
+    if (++n > 19) { clearInterval(titleTimer); document.title = 'BRK-20 Терминал'; }
+  }, 700);
+}
+function fire(msg){ beep(); toast(msg); flashTitle(msg); }
+let prevSig = null;
+function checkEvents(){
+  if (!STATE) return;
+  const M = STATE.manual || {positions: [], trades: []};
+  const sig = {
+    pos: STATE.positions.map(p => p.sym).sort().join(','),
+    n: STATE.n || 0,
+    mpos: M.positions.length, mtr: M.trades.length,
+  };
+  if (prevSig){
+    const was = prevSig.pos.split(',').filter(Boolean).length;
+    const now = sig.pos.split(',').filter(Boolean).length;
+    if (now > was) fire('БОТ ОТКРЫЛ ПОЗИЦИЮ');
+    else if (sig.n > prevSig.n) fire('БОТ ЗАКРЫЛ СДЕЛКУ');
+    if (sig.mpos > prevSig.mpos) fire('РУЧНАЯ ЗАЯВКА ИСПОЛНЕНА');
+    if (sig.mtr > prevSig.mtr) fire('РУЧНАЯ ПОЗИЦИЯ ЗАКРЫТА');
+  }
+  prevSig = sig;
+}
+
 // ---------- состояние ----------
 let stateBusy = false;
 async function loadState(){
@@ -930,6 +1078,7 @@ async function loadState(){
     STATE = await api('/api/state?strat=' + STRAT);
     if (STATE.error) { document.body.innerHTML = '<h2 style="padding:40px">Неверный ключ. Открой ссылку из установщика.</h2>'; throw 0; }
     renderState();
+    checkEvents();
   } finally { stateBusy = false; }
 }
 function renderState(){
@@ -958,19 +1107,47 @@ function renderState(){
   STATE.pendings.forEach(p => { if (!ACTS[p.sym]) ACTS[p.sym] = 'o'; });
   renderQlist();
 
+  // ручная книга: позиции/заявки/сделки, открытые руками из панели терминала
+  const M = STATE.manual || {positions: [], pendings: [], trades: [], n: 0, pnl: 0};
+  document.getElementById('h-man').textContent = M.n ? (M.pnl >= 0 ? '+' : '') + M.pnl.toFixed(2) + '$' : '—';
+  document.getElementById('h-man').style.color = M.n ? (M.pnl >= 0 ? 'var(--green)' : 'var(--red)') : '';
+
   document.getElementById('positions').innerHTML = STATE.positions.length
     ? '<table><tr><th>Монета</th><th>Вход</th><th>Стоп</th><th>Стадия</th><th></th></tr>' +
       STATE.positions.map(p => `<tr><td>${STATE.side === 'short' ? '↓ ' : ''}${p.sym}</td><td>${fmt(p.entry)}</td><td>${fmt(p.stop)}</td><td>${p.stage===0?'до BE':'трейл'}</td><td><button class="warn" onclick="closePos('${p.sym}')">Закрыть</button></td></tr>`).join('') + '</table>'
     : '<div class="empty">пусто</div>';
+  if (M.positions.length)
+    document.getElementById('positions').innerHTML +=
+      '<table><tr><th>✋ Монета</th><th>Сторона</th><th>Вход</th><th>Цена</th><th>PnL</th><th>Размер</th><th>Стоп</th><th></th></tr>' +
+      M.positions.map(p => `<tr><td>${p.sym}</td><td class="${p.side==='long'?'pos-r':'neg-r'}">${p.side==='long'?'лонг':'шорт'}</td>` +
+        `<td>${fmt(p.entry)}</td><td>${p.px ? fmt(p.px) : '—'}</td>` +
+        `<td class="${(p.pnl_usd||0)>=0?'pos-r':'neg-r'}">${p.pnl_usd != null ? (p.pnl_usd>=0?'+':'') + p.pnl_usd.toFixed(2) + '$ (' + p.pnl_pct.toFixed(1) + '%)' : '—'}</td>` +
+        `<td>${p.qty_usd}$</td><td>${p.stop ? fmt(p.stop) : '—'}</td>` +
+        `<td><button class="warn" onclick="closeManual(${p.id})">Закрыть</button></td></tr>`).join('') + '</table>';
+
   document.getElementById('pendings').innerHTML = STATE.pendings.length
     ? '<table><tr><th>Монета</th><th>Buy-stop</th><th>Стоп</th><th></th></tr>' +
       STATE.pendings.map(p => `<tr><td>${p.sym}</td><td>${fmt(p.entry)}</td><td>${fmt(p.stop)}</td><td><button class="warn" onclick="cancelPend('${p.sym}')">Отменить</button></td></tr>`).join('') + '</table>'
     : '<div class="empty">пусто</div>';
+  if (M.pendings.length)
+    document.getElementById('pendings').innerHTML +=
+      '<table><tr><th>✋ Монета</th><th>Тип</th><th>Сторона</th><th>Цена</th><th>Размер</th><th></th></tr>' +
+      M.pendings.map(p => `<tr><td>${p.sym}</td><td>${p.otype}</td><td>${p.side==='long'?'лонг':'шорт'}</td>` +
+        `<td>${fmt(p.price)}</td><td>${p.qty_usd}$</td>` +
+        `<td><button class="warn" onclick="cancelManual(${p.id})">Отменить</button></td></tr>`).join('') + '</table>';
+
   const tt = (STATE.trades||[]).slice(-15).reverse();
   document.getElementById('trades').innerHTML = tt.length
     ? '<table><tr><th>Монета</th><th>R</th><th>$</th><th>Выход</th></tr>' +
       tt.map(t => `<tr><td>${t.sym}</td><td class="${t.r>0?'pos-r':'neg-r'}">${t.r>0?'+':''}${t.r.toFixed(2)}R</td><td>${t.r_usd.toFixed(2)}</td><td>${{stop:'стоп', trail:'трейл', manual:'вручную'}[t.out]||t.out}</td></tr>`).join('') + '</table>'
     : '<div class="empty">сделок ещё нет</div>';
+  const mt = (M.trades||[]).slice(-15).reverse();
+  if (mt.length)
+    document.getElementById('trades').innerHTML +=
+      '<table><tr><th>✋ Монета</th><th>Сторона</th><th>$</th><th>%</th></tr>' +
+      mt.map(t => `<tr><td>${t.sym}</td><td>${t.side==='long'?'лонг':'шорт'}</td>` +
+        `<td class="${t.pnl_usd>=0?'pos-r':'neg-r'}">${t.pnl_usd>=0?'+':''}${t.pnl_usd.toFixed(2)}</td>` +
+        `<td>${t.pnl_pct>=0?'+':''}${t.pnl_pct.toFixed(2)}%</td></tr>`).join('') + '</table>';
   document.getElementById('journal').textContent = (STATE.journal||[]).slice(-15).reverse().join('\n');
   if (STATE.eq_curve.length)
     eqline.setData(STATE.eq_curve.map((v,i) => ({ time: i+1, value: v })));
@@ -981,36 +1158,59 @@ function renderState(){
 // ---------- журнал сделок ----------
 function renderTradebook(){
   const el = document.getElementById('tradebook');
-  if (!STATE || !STATE.trades || !STATE.trades.length){
+  const M = (STATE && STATE.manual) || {trades: []};
+  const hasBot = STATE && STATE.trades && STATE.trades.length;
+  const hasMan = M.trades && M.trades.length;
+  if (!hasBot && !hasMan){
     el.innerHTML = '<div class="empty">Сделок ещё нет. Каждая закрытая сделка появится здесь с контекстом: почему вошли, где был стоп, как вышли. Плюс поле для твоей заметки.</div>';
     return;
   }
-  const tt = STATE.trades.slice().reverse();
-  el.innerHTML = tt.map(t => {
-    const ctx = t.ctx || {};
-    return `<div class="trow">
+  let html = '';
+  if (hasBot){
+    const tt = STATE.trades.slice().reverse();
+    html += tt.map(t => {
+      const ctx = t.ctx || {};
+      return `<div class="trow">
+        <div class="head">
+          <span class="sym">#${t.id ?? '—'} ${t.sym}</span>
+          <span class="${t.r>0?'pos-r':'neg-r'}" style="font-weight:700">${t.r>0?'+':''}${t.r.toFixed(2)}R · ${t.r_usd.toFixed(2)}$</span>
+          <span class="stat">${{stop:'выход по стопу', trail:'выход по трейлу', manual:'закрыта вручную'}[t.out]||t.out}</span>
+          <span class="stat">вход ${fmt(t.entry)} → выход ${fmt(t.exit)}</span>
+          <span class="stat">${fmtT(t.entry_t)} → ${fmtT(t.exit_t)}</span>
+        </div>
+        ${ctx.reason ? `<div class="ctx">Почему вошли: ${ctx.reason}${ctx.sig_t ? ' · сигнал ' + fmtT(ctx.sig_t) : ''}</div>` : ''}
+        <textarea placeholder="Твоя заметка к сделке: что видел, что чувствовал, что повторить/не повторять..." data-tid="${t.id}">${t.note || ''}</textarea>
+        <button class="sv" onclick="saveNote(${t.id}, this)">Сохранить заметку</button>
+      </div>`;
+    }).join('');
+  }
+  if (hasMan){
+    html += M.trades.slice().reverse().map(t => `<div class="trow">
       <div class="head">
-        <span class="sym">#${t.id ?? '—'} ${t.sym}</span>
-        <span class="${t.r>0?'pos-r':'neg-r'}" style="font-weight:700">${t.r>0?'+':''}${t.r.toFixed(2)}R · ${t.r_usd.toFixed(2)}$</span>
-        <span class="stat">${{stop:'выход по стопу', trail:'выход по трейлу', manual:'закрыта вручную'}[t.out]||t.out}</span>
+        <span class="sym">✋ #${t.id} ${t.sym}</span>
+        <span class="${t.pnl_usd>=0?'pos-r':'neg-r'}" style="font-weight:700">${t.pnl_usd>=0?'+':''}${t.pnl_usd.toFixed(2)}$ · ${t.pnl_pct>=0?'+':''}${t.pnl_pct.toFixed(2)}%</span>
+        <span class="stat">ручная ${t.side === 'long' ? 'лонг' : 'шорт'} · ${t.qty_usd}$</span>
         <span class="stat">вход ${fmt(t.entry)} → выход ${fmt(t.exit)}</span>
         <span class="stat">${fmtT(t.entry_t)} → ${fmtT(t.exit_t)}</span>
       </div>
-      ${ctx.reason ? `<div class="ctx">Почему вошли: ${ctx.reason}${ctx.sig_t ? ' · сигнал ' + fmtT(ctx.sig_t) : ''}</div>` : ''}
-      <textarea placeholder="Твоя заметка к сделке: что видел, что чувствовал, что повторить/не повторять..." data-tid="${t.id}">${t.note || ''}</textarea>
-      <button class="sv" onclick="saveNote(${t.id}, this)">Сохранить заметку</button>
-    </div>`;
-  }).join('');
+      ${t.note ? `<div class="ctx">Почему вошли: ${t.note}</div>` : ''}
+      <textarea placeholder="Твоя заметка к сделке: что видел, что чувствовал, что повторить/не повторять...">${t.note2 || ''}</textarea>
+      <button class="sv" onclick="saveNote(${t.id}, this, 'manual')">Сохранить заметку</button>
+    </div>`).join('');
+  }
+  el.innerHTML = html;
 }
-async function saveNote(tid, btn){
+async function saveNote(tid, btn, strat){
   const ta = btn.parentElement.querySelector('textarea');
-  await post('/api/note', {id: tid, text: ta.value, strat: STRAT});
+  await post('/api/note', {id: tid, text: ta.value, strat: strat || STRAT});
   btn.textContent = 'Сохранено ✓'; setTimeout(() => btn.textContent = 'Сохранить заметку', 1500);
 }
 
 // ---------- действия ----------
 async function closePos(sym){ if (confirm('Закрыть бумажную позицию ' + sym + ' по текущей цене?')) { await ctl({cmd:'close', sym}); loadState(); } }
 async function cancelPend(sym){ await ctl({cmd:'cancel', sym}); loadState(); }
+async function closeManual(id){ if (confirm('Закрыть ручную позицию по текущей цене?')) { const r = await ctl({cmd:'manual_close', id}); if (r.msg) toast(r.msg); loadState(); } }
+async function cancelManual(id){ await ctl({cmd:'manual_cancel', id}); loadState(); }
 document.getElementById('btn-pause').onclick = async () => { await ctl({cmd: STATE && STATE.paused ? 'resume' : 'pause'}); loadState(); };
 document.getElementById('btn-cancel-all').onclick = async () => { if (confirm('Отменить ВСЕ заявки buy-stop?')) { await ctl({cmd:'cancel_all'}); loadState(); } };
 document.getElementById('btn-close-all').onclick = async () => { if (confirm('Закрыть ВСЕ позиции по рынку?')) { await ctl({cmd:'close_all'}); loadState(); } };
@@ -1021,7 +1221,7 @@ document.getElementById('f-eq').onsubmit = async (e) => { e.preventDefault();
   await ctl({cmd:'set_equity', value: parseFloat(document.getElementById('in-eq').value)});
   alert('Команда отправлена — применится, если нет открытых позиций'); loadState(); };
 
-// ---------- ручная заявка (заглушка): табы типа + Купить/Продать ----------
+// ---------- ручная заявка: табы типа + Купить/Продать (бумажное исполнение) ----------
 function syncOtypeTabs(){
   const t = document.getElementById('m-type').value;
   document.querySelectorAll('#otype-tabs button').forEach(b => b.classList.toggle('cur', b.dataset.t === t));
@@ -1038,13 +1238,15 @@ document.getElementById('m-buy').onclick = () => { document.getElementById('m-si
 document.getElementById('m-sell').onclick = () => { document.getElementById('m-side').value = 'short'; };
 document.getElementById('f-manual').onsubmit = async (e) => { e.preventDefault();
   const side = document.getElementById('m-side').value;
-  await ctl({cmd:'manual_order', sym: document.getElementById('m-sym').value,
+  const r = await ctl({cmd:'manual_order', sym: document.getElementById('m-sym').value,
     side: side, otype: document.getElementById('m-type').value,
     price: document.getElementById('m-price').value || null, qty: document.getElementById('m-qty').value || null,
+    stop: document.getElementById('m-stop').value || null,
     note: document.getElementById('m-note').value});
-  alert((side === 'long' ? 'Купить' : 'Продать') + ': заявка записана в журнал (заглушка — не исполняется)');
+  toast((side === 'long' ? 'Купить: ' : 'Продать: ') + (r.msg || r.error || '?'));
   document.getElementById('m-price').value = '';
   document.getElementById('m-qty').value = '';
+  document.getElementById('m-stop').value = '';
   document.getElementById('m-note').value = '';
   loadState(); };
 syncOtypeTabs();
@@ -1058,6 +1260,10 @@ document.querySelectorAll('.tf').forEach(b => b.onclick = () => {
 function resizeCharts(){
   const w = document.getElementById('chartwrap');
   chart.applyOptions({ width: w.clientWidth, height: w.clientHeight });
+  if (chart2){
+    const w2 = document.getElementById('chart2');
+    if (w2.clientWidth) chart2.applyOptions({ width: w2.clientWidth, height: w2.clientHeight });
+  }
   resizeEq();
 }
 function resizeEq(){
@@ -1067,9 +1273,12 @@ function resizeEq(){
 new ResizeObserver(resizeCharts).observe(document.getElementById('chartwrap'));
 
 applyChartTheme();
+function syncCsv(){ document.getElementById('bt-csv').href = '/api/trades_csv?strat=' + STRAT + '&key=' + KEY; }
+syncCsv();
+if (localStorage.getItem('brk-2tf') === '1') document.getElementById('btn-2tf').click();
 loadQuotes(); loadState(); loadChart(true); loadDrawings(); renderBook(); renderTape();
 setInterval(loadState, 10000);
-setInterval(() => { loadChart(false); }, 30000);
+setInterval(() => { loadChart(false); loadChart2(); }, 30000);
 setInterval(loadQuotes, 5000);
 setInterval(() => { renderBook(); renderTape(); }, 2500);
 </script>
