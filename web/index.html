@@ -705,6 +705,7 @@ function renderDrawList(){
     ? mine.map(x => `<div><span>${ICONS[x.type]||x.type} ${fmt(x.price || x.p1 || 0)} ${x.text ? '· ' + x.text.slice(0,30) : ''}</span><button class="warn" onclick="delDraw(${x.id})">✕</button></div>`).join('')
     : '<div class="empty">пусто — выбери инструмент и кликни на график (или ПКМ)</div>';
 }
+
 async function delDraw(id){
   await post('/api/drawings', {symbol: SYM, action:'del', id});
   await loadDrawings(); loadChart(false);
