@@ -164,6 +164,20 @@
   td { padding:6px 8px; border-bottom:1px solid var(--panel2); vertical-align:top; }
   tr:hover td { background:rgba(255,255,255,.02); }
   .pos-r { color:var(--green); } .neg-r { color:var(--red); }
+  /* --- биржевой вид таблиц заявок/позиций (как на Binance) --- */
+  .otab th, .otab td { white-space:nowrap; }
+  .otab td.n, .otab th.n { text-align:right; font-variant-numeric:tabular-nums; }
+  .otab .sym { font-weight:700; color:var(--txt); }
+  .otab .side-buy { color:var(--green); font-weight:600; }
+  .otab .side-sell { color:var(--red); font-weight:600; }
+  .otab .chip { display:inline-block; padding:1px 7px; border-radius:8px; font-size:10px; font-weight:600;
+                background:rgba(240,185,11,.12); color:var(--amber); border:1px solid rgba(240,185,11,.3); }
+  .otab .chip.green { background:rgba(14,203,129,.12); color:var(--green); border-color:rgba(14,203,129,.3); }
+  .otab .ttl-hot { color:var(--red); font-weight:700; }
+  .otab .osub { color:var(--dim); font-size:11px; }
+  .otab-head { display:flex; justify-content:space-between; align-items:center; padding:6px 8px 2px;
+               color:var(--dim); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; }
+  .otab-head button { font-size:11px; padding:2px 10px; }
   #journal { font:11px/1.6 ui-monospace,Consolas,monospace; color:var(--dim); padding:8px 12px; white-space:pre-wrap; }
   .empty { padding:10px 12px; color:var(--dim); }
   #drawlist div { display:flex; justify-content:space-between; gap:6px; padding:4px 12px; font-size:12px; }
@@ -273,7 +287,7 @@
         <div id="toolbar2">
           <span class="ss">2-й ТФ</span>
           <button class="tf2" data-tf="15m">15м</button><button class="tf2" data-tf="30m">30м</button>
-          <button class="tf2" data-tf="1h">1ч</button><button class="tf2 act" data-tf="4h">4ч</button>
+          <button class="tf2" data-tf="1h">1ч</button><button class="tf2" data-tf="4h">4ч</button>
           <button class="tf2" data-tf="1d">1д</button>
         </div>
         <div id="chart2"></div>
@@ -420,6 +434,8 @@ const fmt = (x) => {
 };
 const pxDec = (p) => p >= 1000 ? 1 : p >= 100 ? 2 : p >= 1 ? 4 : p >= 0.1 ? 5 : p >= 0.001 ? 6 : 8;
 const fmtT = (ms) => ms ? new Date(ms).toISOString().slice(5,16).replace('T',' ') : '—';
+const curPx = (sym) => { const q = QUOTES.find(r => r.sym === sym); return q ? q.px : null; };
+const fmtLeft = (ms) => { let m = Math.max(0, Math.round(ms/60000)); const h = Math.floor(m/60); m %= 60; return h ? (m ? h+'ч '+m+'м' : h+'ч') : m+'м'; };
 const fmtHMS = (ms) => ms ? new Date(ms).toISOString().slice(11,19) : '—';
 const fmtVol = (v) => v >= 1e9 ? (v/1e9).toFixed(2)+'B' : v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'K' : (v||0).toFixed(0);
 const SYMS17 = ['SOLUSDT','BNBUSDT','XRPUSDT','ADAUSDT','AVAXUSDT','SUIUSDT','APTUSDT','NEARUSDT','LINKUSDT','AAVEUSDT','ARBUSDT','OPUSDT','DOGEUSDT','TAOUSDT','ONDOUSDT','INJUSDT','SEIUSDT'];
@@ -1113,9 +1129,28 @@ function renderState(){
   document.getElementById('h-man').textContent = M.n ? (M.pnl >= 0 ? '+' : '') + M.pnl.toFixed(2) + '$' : '—';
   document.getElementById('h-man').style.color = M.n ? (M.pnl >= 0 ? 'var(--green)' : 'var(--red)') : '';
 
+  // позиции — биржевой вид (как на Binance): сторона, размер, вход, текущая, PnL, стоп, стадия
+  const isSh = STATE.side === 'short';
   document.getElementById('positions').innerHTML = STATE.positions.length
-    ? '<table><tr><th>Монета</th><th>Вход</th><th>Стоп</th><th>Стадия</th><th></th></tr>' +
-      STATE.positions.map(p => `<tr><td>${STATE.side === 'short' ? '↓ ' : ''}${p.sym}</td><td>${fmt(p.entry)}</td><td>${fmt(p.stop)}</td><td>${p.stage===0?'до BE':'трейл'}</td><td><button class="warn" onclick="closePos('${p.sym}')">Закрыть</button></td></tr>`).join('') + '</table>'
+    ? '<div class="otab-head"><span>Открытые позиции (' + STATE.positions.length + ')</span></div>' +
+      '<table class="otab"><tr><th>Пара</th><th>Сторона</th><th class="n">Размер</th><th class="n">Вход</th>' +
+      '<th class="n">Текущая</th><th class="n">PnL</th><th class="n">Стоп</th><th class="n">До стопа</th><th>Стадия</th><th></th></tr>' +
+      STATE.positions.map(p => {
+        const px = curPx(p.sym);
+        const rmult = px ? ((isSh ? p.entry - px : px - p.entry) / p.entry / p.dist) : null;
+        const pnl = rmult != null ? rmult * p.r_usd * (p.rem != null ? p.rem : 1) : null;
+        const pct = px ? (isSh ? (p.entry/px - 1) : (px/p.entry - 1)) * 100 : null;
+        const toStop = px ? Math.abs((p.stop - px) / px) * 100 : null;
+        return `<tr><td class="sym">${p.sym}</td>` +
+          `<td class="${isSh ? 'side-sell' : 'side-buy'}">${isSh ? 'Продажа ▼' : 'Покупка ▲'}</td>` +
+          `<td class="n">${p.notional.toFixed(0)}$</td><td class="n">${fmt(p.entry)}</td>` +
+          `<td class="n">${px ? fmt(px) : '—'}</td>` +
+          `<td class="n ${pnl != null && pnl >= 0 ? 'pos-r' : 'neg-r'}">${pnl != null ? (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + '$ (' + (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%)' : '—'}</td>` +
+          `<td class="n neg-r">${fmt(p.stop)}</td>` +
+          `<td class="n">${toStop != null ? toStop.toFixed(2) + '%' : '—'}</td>` +
+          `<td>${p.stage === 0 ? '<span class="chip">до BE</span>' : '<span class="chip green">трейл</span>'}</td>` +
+          `<td><button class="warn" onclick="closePos('${p.sym}')">Закрыть</button></td></tr>`;
+      }).join('') + '</table>'
     : '<div class="empty">пусто</div>';
   if (M.positions.length)
     document.getElementById('positions').innerHTML +=
@@ -1126,9 +1161,28 @@ function renderState(){
         `<td>${p.qty_usd}$</td><td>${p.stop ? fmt(p.stop) : '—'}</td>` +
         `<td><button class="warn" onclick="closeManual(${p.id})">Закрыть</button></td></tr>`).join('') + '</table>';
 
+  // заявки — биржевой вид (как на Binance): дата, тип, сторона, триггер, дистанция, стоп, объём, риск, TTL
   document.getElementById('pendings').innerHTML = STATE.pendings.length
-    ? '<table><tr><th>Монета</th><th>Buy-stop</th><th>Стоп</th><th></th></tr>' +
-      STATE.pendings.map(p => `<tr><td>${p.sym}</td><td>${fmt(p.entry)}</td><td>${fmt(p.stop)}</td><td><button class="warn" onclick="cancelPend('${p.sym}')">Отменить</button></td></tr>`).join('') + '</table>'
+    ? '<div class="otab-head"><span>Открытые заявки (' + STATE.pendings.length + ')</span>' +
+      (STATE.pendings.length > 1 ? '<button class="warn" onclick="cancelAllPend()">Отменить все</button>' : '') + '</div>' +
+      '<table class="otab"><tr><th>Дата</th><th>Пара</th><th>Тип</th><th>Сторона</th><th class="n">Цена сраб.</th>' +
+      '<th class="n">До сраб.</th><th class="n">Стоп-лосс</th><th class="n">Объём</th><th class="n">Риск</th><th class="n">TTL</th><th></th></tr>' +
+      STATE.pendings.map(p => {
+        const px = curPx(p.sym);
+        const toTrig = px ? (isSh ? (px/p.entry - 1) : (p.entry/px - 1)) * 100 : null;
+        const notional = Math.min(STATE.eq * STATE.risk / p.sf, STATE.eq);
+        const left = p.exp - Date.now();
+        return `<tr><td class="osub">${fmtT(p.ctx && p.ctx.sig_t)}</td>` +
+          `<td class="sym">${p.sym}</td><td>Стоп-маркет</td>` +
+          `<td class="${isSh ? 'side-sell' : 'side-buy'}">${isSh ? 'Продажа ▼' : 'Покупка ▲'}</td>` +
+          `<td class="n">${fmt(p.entry)}</td>` +
+          `<td class="n ${toTrig != null && toTrig <= 1 ? 'neg-r' : ''}">${toTrig != null ? toTrig.toFixed(2) + '%' : '—'}</td>` +
+          `<td class="n neg-r">${fmt(p.stop)}</td>` +
+          `<td class="n">${notional.toFixed(0)}$</td>` +
+          `<td class="n">${(STATE.eq * STATE.risk).toFixed(2)}$</td>` +
+          `<td class="n ${left < 2*3600e3 ? 'ttl-hot' : ''}">${left > 0 ? fmtLeft(left) : 'истекла'}</td>` +
+          `<td><button class="warn" onclick="cancelPend('${p.sym}')">Отменить</button></td></tr>`;
+      }).join('') + '</table>'
     : '<div class="empty">пусто</div>';
   if (M.pendings.length)
     document.getElementById('pendings').innerHTML +=
@@ -1210,6 +1264,7 @@ async function saveNote(tid, btn, strat){
 // ---------- действия ----------
 async function closePos(sym){ if (confirm('Закрыть бумажную позицию ' + sym + ' по текущей цене?')) { await ctl({cmd:'close', sym}); loadState(); } }
 async function cancelPend(sym){ await ctl({cmd:'cancel', sym}); loadState(); }
+async function cancelAllPend(){ if (confirm('Отменить ВСЕ заявки?')) { await ctl({cmd:'cancel_all'}); loadState(); } }
 async function closeManual(id){ if (confirm('Закрыть ручную позицию по текущей цене?')) { const r = await ctl({cmd:'manual_close', id}); if (r.msg) toast(r.msg); loadState(); } }
 async function cancelManual(id){ await ctl({cmd:'manual_cancel', id}); loadState(); }
 document.getElementById('btn-pause').onclick = async () => { await ctl({cmd: STATE && STATE.paused ? 'resume' : 'pause'}); loadState(); };
