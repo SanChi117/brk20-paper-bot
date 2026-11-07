@@ -108,8 +108,7 @@
   #toolbar { display:flex; gap:5px; padding:6px 10px; align-items:center; border-bottom:1px solid var(--border); flex-wrap:wrap; }
   #toolbar .sep { width:1px; height:16px; background:var(--border); margin:0 4px; }
   #chartwrap { flex:1; position:relative; min-height:0; }
-  #obadges { position:absolute; inset:0; pointer-events:none; z-index:5; overflow:hidden;
-}
+  #obadges { position:absolute; inset:0; pointer-events:none; z-index:5; overflow:hidden; }
   .obadge { position:absolute; transform:translateY(-50%); background:#1e222d; border:1px solid #363c4e;
     border-radius:3px; padding:2px 6px; font-size:11px; white-space:nowrap; pointer-events:auto;
     color:var(--text, #eaecef); box-shadow:0 1px 4px rgba(0,0,0,.4); line-height:1.5; }
@@ -226,7 +225,7 @@
   <span class="stat">PF<b id="h-pf">—</b></span>
   <span class="stat">WR<b id="h-wr">—</b></span>
   <span class="stat" title="Суммарный результат ручных бумажных сделок">Ручные<b id="h-man">—</b></span>
-  <span id="h-gate" class="badge gate-run">—</b></span>
+  <span id="h-gate" class="badge gate-run">—</span>
   <span id="h-paused" class="badge paused" style="display:none">ПАУЗА</span>
   <span style="flex:1"></span>
   <span class="stat">Стратегия
