@@ -54,6 +54,9 @@ def main():
     out = sys.argv[1]; os.makedirs(out, exist_ok=True)
     d0, d1 = dt.date(2021, 12, 1), dt.date(2026, 10, 31)
     days = [(d0 + dt.timedelta(days=i)).isoformat() for i in range((d1 - d0).days + 1)]
+    global SYMS
+    if len(sys.argv) > 2:
+        SYMS = sys.argv[2].split(',')
     jobs = [(met, (s, d)) for s in SYMS for d in days] + [(prem, (s, m)) for s in SYMS for m in months('2021-10', '2026-10')]
     M = {s: {} for s in SYMS}; P = {s: [] for s in SYMS}
     with ThreadPoolExecutor(48) as ex:
