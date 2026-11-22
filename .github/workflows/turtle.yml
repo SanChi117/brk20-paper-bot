@@ -1,0 +1,17 @@
+name: turtle
+on:
+  workflow_dispatch:
+  push:
+    branches: ['auto/turtle']
+    paths: ['turtle/**', '.github/workflows/turtle.yml']
+jobs:
+  bt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy
+      - run: python -u turtle/fetch.py turtle_data && python -u turtle/backtest.py turtle_data
+      - run: cat turtle_out/REPORT.md >> "$GITHUB_STEP_SUMMARY"
