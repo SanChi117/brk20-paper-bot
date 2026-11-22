@@ -17,8 +17,8 @@ def load(data, s):
     return a, f
 
 
-def run(a, f, n_in, n_out, longs=True, shorts=True, regime=None, t_reg=None):
-    t, o, h, l, c = a.T
+def run(a, f, n_in, n_out, longs=True, shorts=True, regime=None, t_reg=None, allow=None):
+    t, o, h, l, c = a[:, :5].T
     t = t.astype(np.int64); n = len(t)
     tr = np.maximum(h - l, np.maximum(abs(h - np.r_[c[0], c[:-1]]), abs(l - np.r_[c[0], c[:-1]])))
     atr = np.convolve(tr, np.ones(20) / 20)[:n]
@@ -36,7 +36,7 @@ def run(a, f, n_in, n_out, longs=True, shorts=True, regime=None, t_reg=None):
             elif (s == 1 and c[i] < lo_out) or (s == -1 and c[i] > hi_out):
                 trades.append(close(pos, o[i + 1], t[i + 1], ft, fr)); pos = None
                 continue
-        if pos is None:
+        if pos is None and (allow is None or allow[i]):
             rg = 0
             if regime is not None:
                 k = np.searchsorted(t_reg, t[i], side='right') - 1
