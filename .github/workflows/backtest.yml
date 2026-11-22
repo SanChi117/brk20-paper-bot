@@ -1,0 +1,32 @@
+name: backtest
+on:
+  workflow_dispatch:
+  push:
+    branches: ['research/**']
+    paths: ['research/**', '.github/workflows/backtest.yml']
+jobs:
+  brk20:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        with:
+          path: data
+          key: vision-1h-2021-01-2026-10-v1
+      - name: Fetch Binance USD-M archives (SHA256 verified)
+        run: |
+          if [ ! -f data/receipt.csv ]; then python research/fetch_vision.py --start 2021-01 --end 2026-10 --out data; fi
+          tail -n +2 data/receipt.csv | cut -d, -f4 | sort | uniq -c
+      - name: Run BRK-20 / BRK-20S backtest
+        run: python research/brk20_backtest.py --data data --out results
+      - run: cat results/REPORT.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: brk20-backtest-results
+          path: |
+            results/
+            data/receipt.csv
