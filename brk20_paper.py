@@ -159,10 +159,14 @@ def apply_controls(st):
             log(f"WEB: РУЧНАЯ ЗАЯВКА (заглушка, не исполняется): {sym or c.get('sym')} "
                 f"{c.get('side','long')} {c.get('otype','market')} qty={c.get('qty','?')} "
                 f"price={c.get('price','-')} note={str(c.get('note',''))[:200]}")
+        elif cmd == 'set_risk' and os.environ.get('BRK20_ALLOW_GATE_OVERRIDES') != '1':
+            log('WEB: отказ в set_risk — во время форвард-гейта риск и equity не меняются (BRK20_ALLOW_GATE_OVERRIDES=1 чтобы разрешить)')
         elif cmd == 'set_risk':
             v = max(0.0025, min(0.02, float(c.get('value', RISK))))
             st['risk'] = v
             log(f'WEB: риск на сделку изменён на {v*100:.2f}% (гейт рассчитан на 1% — изменение фиксируется)')
+        elif cmd == 'set_equity' and os.environ.get('BRK20_ALLOW_GATE_OVERRIDES') != '1':
+            log('WEB: отказ в set_equity — во время форвард-гейта риск и equity не меняются (BRK20_ALLOW_GATE_OVERRIDES=1 чтобы разрешить)')
         elif cmd == 'set_equity':
             if st['positions']:
                 log('WEB: отказ в set_equity — есть открытые позиции')
@@ -196,7 +200,7 @@ def append_trade(tr):
                     f"{tr['r']:.3f}", f"{tr['r_usd']:.2f}", tr['out']])
 
 def stats(st):
-    trs = st['trades']
+    trs = [t for t in st['trades'] if t.get('out') != 'manual']  # ручные закрытия не входят в гейт
     gw = sum(t['r_usd'] for t in trs if t['r_usd'] > 0)
     gl = -sum(t['r_usd'] for t in trs if t['r_usd'] < 0)
     pf = gw/gl if gl > 0 else float('inf')
@@ -213,6 +217,20 @@ def write_status(st):
     with open(STATUS_F, 'w') as f:
         f.write(txt)
 
+def _stop_out(st, pos, px, t, out):
+    """Закрытие позиции по стопу (используется для стопа в баре входа)."""
+    r_multiple = (px-pos['entry'])/pos['entry']/pos['dist']
+    pnl = r_multiple*pos['r_usd']*pos['rem'] - FEE_STOP*pos['notional']*pos['rem']
+    st['eq'] += pnl
+    st['trade_seq'] = st.get('trade_seq', 0) + 1
+    tr = {'sym': pos['sym'], 'entry': pos['entry'], 'exit': px,
+          'r': pos['r_tot'] + pnl/pos['r_usd'], 'r_usd': pnl, 'out': out,
+          'id': st['trade_seq'], 'entry_t': pos.get('entry_t'), 'exit_t': t,
+          'ctx': pos.get('ctx', {})}
+    st['trades'].append(tr); append_trade(tr)
+    log(f"EXIT {pos['sym']} stop в баре входа @ {px:.6g} | R {tr['r']:+.2f} | eq {st['eq']:.2f}")
+    st['positions'].remove(pos)
+
 def process_bar_1h(st, sym, t, o, h, l, c, symdata):
     """Управление позициями и исполнение заявок на закрытом 1h-баре. 1:1 из бэктеста."""
     # --- manage ---
@@ -221,7 +239,7 @@ def process_bar_1h(st, sym, t, o, h, l, c, symdata):
             continue
         stop = pos['stop']
         if l <= stop:
-            px = stop*(1-SLIP)
+            px = min(o, stop)*(1-SLIP)  # гэп ниже стопа: исполнение по открытию бара
             r_multiple = (px-pos['entry'])/pos['entry']/pos['dist']
             pnl = r_multiple*pos['r_usd']*pos['rem'] - FEE_STOP*pos['notional']*pos['rem']
             st['eq'] += pnl
@@ -267,20 +285,32 @@ def process_bar_1h(st, sym, t, o, h, l, c, symdata):
             continue
         if len(st['positions']) >= MAXPOS:
             continue
+        # заявка действует только после ЗАКРЫТИЯ сигнальной 4h-свечи (раньше сигнала не существовало)
+        if t < p.get('active_from', p['exp'] - TTL_BRK + H4):
+            continue
         e = p['entry']
         if h < e*(1+SLIP):
             continue
-        notional = min((st['eq']*risk)/p['sf'], st['eq'])
-        pos = {'sym': sym, 'entry': e, 'stop': p['stop'], 'dist': p['sf'],
+        # buy-stop ниже текущей цены исполняется сразу по открытию бара, а не по уровню пробоя
+        fill = max(e, o)*(1+SLIP)
+        sf = (fill - p['stop'])/fill
+        st['pendings'].remove(p)
+        if sf <= 0 or sf > 0.20:
+            log(f"SKIP {sym}: фактический вход {fill:.6g} даёт стоп {sf*100:.1f}% (>20% или неверный) — сделка пропущена")
+            continue
+        notional = min((st['eq']*risk)/sf, st['eq'])
+        pos = {'sym': sym, 'entry': fill, 'signal_entry': e, 'stop': p['stop'], 'dist': sf,
                'notional': notional, 'r_usd': st['eq']*risk, 'rem': 1.0,
                'r_tot': -FEE_IN*notional/(st['eq']*risk), 'stage': 0,
                'entry_t4': t//H4*H4, 'entry_t': t,
                'ctx': p.get('ctx', {}),
-               'be_trigger': e*(1+2.0*p['sf'])}
+               'be_trigger': fill*(1+2.0*sf)}
         st['positions'].append(pos)
         st['eq'] -= FEE_IN*notional
-        st['pendings'].remove(p)
-        log(f"FILL {sym} buy-stop @ {e:.6g} | стоп {p['stop']:.6g} | риск {pos['r_usd']:.2f}$ | eq {st['eq']:.2f}")
+        log(f"FILL {sym} buy-stop @ {fill:.6g} (уровень {e:.6g}) | стоп {p['stop']:.6g} | риск {pos['r_usd']:.2f}$ | eq {st['eq']:.2f}")
+        # консервативно: если в баре входа цена дошла до стопа — считаем стоп в этом же баре
+        if l <= pos['stop']:
+            _stop_out(st, pos, pos['stop']*(1-SLIP), t, 'stop')
 
 def scan_signals(st):
     """Сигналы на закрытии 4h-бара по всему пулу. Вызывается раз в 4 часа."""
@@ -315,7 +345,7 @@ def scan_signals(st):
                    'reason': f"4h закрытие {data.closes[i]:.6g} выше хая 20 дней {hi:.6g}; "
                              f"стоп = вход − 1.75×ATR ({a:.6g}) = {stop:.6g} ({sf*100:.1f}%)"}
             st['pendings'].append({'sym': sym, 'entry': entry, 'stop': stop, 'sf': sf,
-                                   'exp': t4 + TTL_BRK, 'ctx': ctx})
+                                   'exp': t4 + TTL_BRK, 'active_from': t4 + H4, 'ctx': ctx})
             log(f"SIGNAL {sym}: 4h close {data.closes[i]:.6g} > hi20 {hi:.6g} | buy-stop {entry:.6g}, SL {stop:.6g}, TTL 24h")
 
 def main():

@@ -5,7 +5,7 @@
 # слоты стратегий (state изолирован per-стратегия), котировки пула 24ч,
 # постоянные стакан и лента сделок по выбранной монете.
 # Авторизация: токен в URL (?key=...). Только бумажный режим — ключей биржи нет.
-import json, os, time, csv, secrets, subprocess
+import json, os, time, csv, secrets
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime, timezone
@@ -487,7 +487,9 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def _ok(self, q):
-        return q.get('key', [''])[0] == self.token
+        # постоянное по времени сравнение; ключ можно передать заголовком X-Key вместо URL
+        given = self.headers.get('X-Key') or q.get('key', [''])[0]
+        return bool(self.token) and secrets.compare_digest(str(given), str(self.token))
 
     def _send(self, code, body, ctype='application/json'):
         b = body.encode() if isinstance(body, str) else body
@@ -644,7 +646,9 @@ def main():
     conf = load_conf()
     Handler.token = conf['token']
     port = conf.get('port', 8080)
-    srv = ThreadingHTTPServer(('0.0.0.0', port), Handler)
+    # BRK20_WEB_HOST=127.0.0.1 — доступ только через SSH-туннель или HTTPS-прокси (рекомендуется)
+    host = os.environ.get('BRK20_WEB_HOST', '0.0.0.0')
+    srv = ThreadingHTTPServer((host, port), Handler)
     print(f'BRK-20 WEB TERMINAL v3 на порту {port}', flush=True)
     print(f'URL для браузера: http://<IP-сервера>:{port}/?key={conf["token"]}', flush=True)
     srv.serve_forever()
