@@ -1,0 +1,26 @@
+name: mme-label-study
+on:
+  workflow_dispatch:
+  push:
+    branches: ['mme/**']
+    paths: ['mme/**', '.github/workflows/mme.yml']
+jobs:
+  labels:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy
+      - uses: actions/cache@v4
+        with:
+          path: mme_data
+          key: mme-1h-oi-funding-24sym-2021-10-2026-10-v1
+      - name: Fetch Binance archives (SHA256 verified)
+        run: |
+          if [ ! -f mme_data/receipt.csv ]; then python -u mme/fetch.py --out mme_data; fi
+          tail -n +2 mme_data/receipt.csv | awk -F, '{print $2, $4}' | sort | uniq -c
+      - name: Label study
+        run: python -u mme/label_study.py mme_data
+      - run: cat mme_out/REPORT.md >> "$GITHUB_STEP_SUMMARY"
