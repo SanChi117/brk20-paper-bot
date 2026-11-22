@@ -1,0 +1,22 @@
+name: p2
+on:
+  workflow_dispatch:
+  push:
+    branches: ['mme/label-study']
+    paths: ['p2/**', '.github/workflows/p2.yml']
+jobs:
+  xt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy
+      - uses: actions/cache@v4
+        with:
+          path: mme_data
+          key: mme-1h-oicontracts-funding-24sym-2021-10-2026-10-v2
+      - run: if [ ! -f mme_data/receipt.csv ]; then python -u mme/fetch.py --out mme_data; fi
+      - run: python -u p2/backtest.py mme_data
+      - run: cat p2_out/REPORT.md >> "$GITHUB_STEP_SUMMARY"
