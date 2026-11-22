@@ -83,12 +83,12 @@ def main():
     L += ['## Капитал: 54 монеты, риск 0.3% на первую часть, до 8 позиций', '',
           '| вариант | сделок до июня 2026 | 2022–май 2026: капитал / год / просадка | июнь–окт 2026: капитал / просадка |', '|---|---|---|---|']
     rules = [('v1.1 без фильтров', lambda x: True),
-             ('v1.2: без сигналов выходного дня', lambda x: x.dow < 5),
-             ('v1.2 + топ-трейдеры не против (z ≥ −0.5)', lambda x: x.dow < 5 and not (x.div < -0.5)),
-             ('v1.2 + толпа не в сторону пробоя (z ≤ 1)', lambda x: x.dow < 5 and not (x.glz > 1))]
+             ('v1.2: без сигналов выходного дня', lambda x: x['dow'] < 5),
+             ('v1.2 + топ-трейдеры не против (z ≥ −0.5)', lambda x: x['dow'] < 5 and not (x.get('div', 0) < -0.5)),
+             ('v1.2 + толпа не в сторону пробоя (z ≤ 1)', lambda x: x['dow'] < 5 and not (x.get('glz', 0) > 1))]
     recs = df.to_dict('records')
     for name, fn in rules:
-        sub = [dict(R=x['R'], t=x['t'], tx=x['tx'], sym=x['sym']) for x in recs if fn(pd.Series(x))]
+        sub = [dict(R=x['R'], t=x['t'], tx=x['tx'], sym=x['sym']) for x in recs if fn(x)]
         a = RE.equity([x for x in sub if x['t'] < HOLD], 0.003, 8); b = RE.equity([x for x in sub if x['t'] >= HOLD], 0.003, 8)
         L.append(f"| {name} | {sum(1 for x in sub if x['t'] < HOLD)} | ×{a[0]:.2f} / {(a[0]**(1/4.33)-1)*100:+.0f}% / {a[1]*100:.0f}% | ×{b[0]:.2f} / {b[1]*100:.0f}% |")
     os.makedirs('p2_out', exist_ok=True); open('p2_out/FILTERS.md', 'w').write('\n'.join(L) + '\n'); print('\n'.join(L))
