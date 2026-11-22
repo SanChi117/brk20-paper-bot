@@ -21,6 +21,7 @@ def load(name):
     mod = importlib.import_module(name)
     mod = importlib.reload(mod)
     tmp = tempfile.mkdtemp()
+    mod.DIR = tmp
     for attr in ('STATE_F', 'TRADES_F', 'STATUS_F', 'JOURNAL_F', 'CONTROL_F'):
         setattr(mod, attr, os.path.join(tmp, os.path.basename(getattr(mod, attr))))
     return mod
@@ -149,6 +150,33 @@ class GapAndManualTests(unittest.TestCase):
         hz.b.apply_controls(hz.st)
         self.assertEqual(hz.st['eq'], hz.b.EQ0)
         self.assertEqual(hz.st['risk'], hz.b.RISK)
+
+
+class MigrationTests(unittest.TestCase):
+    def test_old_state_is_archived_and_gate_restarts(self):
+        import json
+        b = load('brk20_paper')
+        old = {'eq': 1234.5, 'positions': [], 'pendings': [], 'trades': [{'r_usd': 10, 'out': 'trail'}],
+               'last_1h': {}, 'last_4h_signal': 0, 'started': 0, 'paused': False, 'risk': 0.01, 'trade_seq': 1}
+        with open(b.STATE_F, 'w') as f:
+            json.dump(old, f)
+        with open(b.TRADES_F, 'w') as f:
+            f.write('old')
+        st = b.load_state()
+        self.assertEqual(st['eq'], b.EQ0)
+        self.assertEqual(st['trades'], [])
+        self.assertEqual(st['engine'], b.ENGINE)
+        self.assertFalse(os.path.exists(b.TRADES_F))
+        arch = os.path.join(b.DIR, 'archive')
+        self.assertTrue(any('pre_engine' in d for d in os.listdir(arch)))
+
+    def test_current_state_is_kept(self):
+        import json
+        b = load('brk20s')
+        st0 = b.default_state(); st0['eq'] = 999.0
+        with open(b.STATE_F, 'w') as f:
+            json.dump(st0, f)
+        self.assertEqual(b.load_state()['eq'], 999.0)
 
 
 if __name__ == '__main__':

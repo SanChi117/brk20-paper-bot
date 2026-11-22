@@ -62,5 +62,18 @@ cd /root/brk20 && bash install_web.sh
 
 Тесты: `python3 -m unittest discover -s tests -v`.
 
-**Результаты гейта, набранные до v1.3, недостоверны:** перед перезапуском сохраните и обнулите
-`state.json`, `trades.csv`, `state_slot2.json`, `trades_slot2.csv`.
+**Результаты гейта, набранные до v1.3, недостоверны.** Бот архивирует их сам при первом запуске v1.3 (см. ниже).
+
+## Автообновление (ставится один раз)
+
+```
+cd /root/brk20 && git fetch origin main && git checkout origin/main -- auto_update.sh install_autoupdate.sh brk20-update.service brk20-update.timer && bash install_autoupdate.sh
+```
+
+Дальше каждые 15 минут сервер сам забирает `main`, прогоняет тесты новой версии в отдельной папке и только
+при успехе переключается и перезапускает `brk20`, `brk20s`, `brk20-web`. Если тесты не прошли — остаётся
+старая версия. Правки, сделанные прямо на сервере, сохраняются в `archive/local_changes_*.patch`.
+Журнал: `tail /root/brk20/update.log`. Отключить: `systemctl disable --now brk20-update.timer`.
+
+При первом запуске новой логики исполнения (ENGINE 1.3) бот сам переносит старые `state`/`trades`/`journal`
+в `archive/pre_engine_1.3_*` и начинает гейт заново.

@@ -1,0 +1,9 @@
+[Unit]
+Description=BRK-20 auto-update from GitHub (tests before restart)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/brk20
+ExecStart=/bin/bash /root/brk20/auto_update.sh

@@ -20,6 +20,7 @@ BASE = 'https://fapi.binance.com'
 BYBIT = 'https://api.bybit.com'
 SOURCE = {'name': 'binance'}  # авто-fallback на bybit, если binance недоступен с IP сервера
 DIR = os.path.dirname(os.path.abspath(__file__))
+ENGINE = '1.3'  # версия логики исполнения; при смене старый гейт архивируется
 STATE_F = os.path.join(DIR, 'state_slot2.json')
 TRADES_F = os.path.join(DIR, 'trades_slot2.csv')
 STATUS_F = os.path.join(DIR, 'status_slot2.txt')
@@ -99,7 +100,8 @@ class SymData:
 def default_state():
     return {'eq': EQ0, 'positions': [], 'pendings': [], 'trades': [],
             'last_1h': {}, 'last_4h_signal': 0, 'started': int(time.time()*1000),
-            'paused': False, 'risk': RISK, 'trade_seq': 0}
+            'paused': False, 'risk': RISK, 'trade_seq': 0,
+            'engine': ENGINE}
 
 def _close_manual(st, pos, c=None):
     """Ручное закрытие позиции по текущей цене (из веб-терминала)."""
@@ -175,13 +177,26 @@ def apply_controls(st):
                 st['eq'] = float(c.get('value', st['eq']))
                 log(f"WEB: equity установлен вручную: {st['eq']:.2f}")
 
+def _archive_old_gate(reason):
+    """Переносит state/trades/journal прошлой логики в archive/<время>/, гейт начинается заново."""
+    stamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+    dst = os.path.join(DIR, 'archive', f'pre_engine_{ENGINE}_{stamp}')
+    os.makedirs(dst, exist_ok=True)
+    for f in (STATE_F, TRADES_F, STATUS_F, JOURNAL_F):
+        if os.path.exists(f):
+            os.replace(f, os.path.join(dst, os.path.basename(f)))
+    log(f'ГЕЙТ ПЕРЕЗАПУЩЕН: {reason}. Старые файлы сохранены в {dst}')
+
 def load_state():
     if os.path.exists(STATE_F):
         try:
             with open(STATE_F) as f:
-                return json.load(f)
-        except Exception:
-            pass
+                st = json.load(f)
+            if st.get('engine') == ENGINE:
+                return st
+            _archive_old_gate(f"логика исполнения {st.get('engine', '1.2')} -> {ENGINE} (результаты старой логики недостоверны)")
+        except Exception as e:
+            _archive_old_gate(f'state.json не читается ({e})')
     return default_state()
 
 def save_state(st):

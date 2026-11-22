@@ -7,3 +7,6 @@ status*.txt
 control*.json
 web_config.json
 manual.json
+archive/
+update.log
+update_tests.log
