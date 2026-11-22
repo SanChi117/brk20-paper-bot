@@ -50,7 +50,9 @@ def features(d):
         a = a * 13 / 14 + tr[i] / 14; atr[i] = a
     gap4 = np.r_[np.full(4, False), (t[4:] - t[:-4]) == 4 * H]
     dp4 = np.full(n, np.nan); dp4[4:] = (c[4:] - c[:-4]) / atr[4:]; dp4[~gap4] = np.nan
+    oi = np.where(oi > 0, oi, np.nan)
     doi4 = np.full(n, np.nan); doi4[4:] = oi[4:] / oi[:-4] - 1; doi4[~gap4] = np.nan
+    doi4[~np.isfinite(doi4) | (np.abs(doi4) > 0.5)] = np.nan  # сбойные снимки OI
     mu, sd = rolling_mean_std_past(doi4, 720, 300)
     zoi = doi4 / sd
     qv4 = np.convolve(qv, np.ones(4), 'full')[:n]; tb4 = np.convolve(tb, np.ones(4), 'full')[:n]

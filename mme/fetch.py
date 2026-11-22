@@ -54,7 +54,7 @@ def mt(sym, day):
     if txt:
         for r in csv.DictReader(txt.splitlines()):
             try:
-                rows.append((ts(r['create_time']), float(r['sum_open_interest_value'])))
+                rows.append((ts(r['create_time']), float(r['sum_open_interest'])))
             except (KeyError, ValueError):
                 pass
     return sym, 'm', day, st, rows

@@ -16,7 +16,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: mme_data
-          key: mme-1h-oi-funding-24sym-2021-10-2026-10-v1
+          key: mme-1h-oicontracts-funding-24sym-2021-10-2026-10-v2
       - name: Fetch Binance archives (SHA256 verified)
         run: |
           if [ ! -f mme_data/receipt.csv ]; then python -u mme/fetch.py --out mme_data; fi
