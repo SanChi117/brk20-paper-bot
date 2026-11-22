@@ -100,7 +100,23 @@ class Sym:
                     self.piv.append((i + 3, i, v))
 
 
-def run(data_syms, side, mode, cost, fund_all, start_ms=None, end_ms=None):
+def btc_regime(rows1h):
+    """Режим BTC: день D (UTC) считается бычьим, если close последнего ЗАКРЫТОГО дня > SMA200 дневных close.
+    Возвращает dict: начало дня (ms) -> True/False, действует весь день."""
+    D = 24 * H
+    closes = {}
+    for t, o, h, l, c in rows1h:
+        closes[t // D] = (t, c)  # последний час дня перезаписывает
+    days = sorted(closes)
+    out = {}
+    cl = [closes[d][1] for d in days]
+    for i in range(200, len(days)):
+        sma = sum(cl[i - 200:i]) / 200
+        out[(days[i - 1] + 1) * D] = cl[i - 1] > sma  # для дня после закрытого дня i-1
+    return out
+
+
+def run(data_syms, side, mode, cost, fund_all, start_ms=None, end_ms=None, regime=None):
     c = COSTS[cost]
     long = side == 'long'
     syms = {s: Sym(r, side) for s, r in data_syms.items() if r}
@@ -211,13 +227,17 @@ def run(data_syms, side, mode, cost, fund_all, start_ms=None, end_ms=None):
                     continue
                 close4 = S.b4[i][4]
                 lvl = S.chan[i]
+                if mode == 'fixed_regime':
+                    bull = regime.get((X // (24 * H)) * 24 * H) if regime else None
+                    if bull is None or bull != long:
+                        continue
                 if (long and close4 > lvl) or (not long and close4 < lvl):
                     stop = lvl - 1.75 * S.atr[i] if long else lvl + 1.75 * S.atr[i]
                     sf = (lvl - stop) / lvl if long else (stop - lvl) / lvl
                     if sf <= 0 or sf > 0.20:
                         continue
                     p = {'sym': sym, 'entry': lvl, 'stop': stop, 'exp': t4 + TTL,
-                         'active_from': X if mode == 'fixed' else t4 + H}
+                         'active_from': X if mode != 'legacy' else t4 + H}
                     pend.append(p)
                     if mode == 'legacy':  # бот v1.2 сразу прогонял 3 последних часа сигнальной свечи
                         for tt in (t4 + H, t4 + 2 * H, t4 + 3 * H):
@@ -291,7 +311,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--data', default='data')
     ap.add_argument('--out', default='results')
+    ap.add_argument('--btc', default='')
     a = ap.parse_args()
+    regime = None
+    if a.btc:
+        brows, _ = load(a.btc, 'BTCUSDT')
+        regime = btc_regime(brows) if brows else None
     os.makedirs(a.out, exist_ok=True)
     raw, fund = {}, {}
     for s in SYMS:
@@ -301,9 +326,9 @@ def main():
     lines = ['# BRK-20 / BRK-20S — проверка на истории Binance USD-M Futures', '',
              'Данные: официальные месячные архивы data.binance.vision (1h + funding), SHA256 проверены.', '']
     for side in ('long', 'short'):
-        for mode in ('legacy', 'fixed', 'stopentry'):
+        for mode in ('legacy', 'fixed', 'stopentry') + (('fixed_regime',) if regime else ()):
             for cost in ('botfees', 'realistic'):
-                trades, curve, maxdd, eq = run(raw, side, mode, cost, fund)
+                trades, curve, maxdd, eq = run(raw, side, mode, cost, fund, regime=regime)
                 months = (curve[-1][0] - curve[0][0]) / (30.44 * 24 * H) if curve else None
                 key = f'{side}/{mode}/{cost}'
                 s = summarize(trades, eq, maxdd, months)
@@ -337,7 +362,7 @@ def main():
     for k, s in report['runs'].items():
         lines.append(f"| {k} | {s['trades']} | {s.get('trades_per_month')} | {s['winrate_pct']} | {s['pf']} | {s['pf_ci90']} | "
                      f"{s['avg_r']} | {s.get('return_pct')} | {s.get('max_dd_pct')} | {s.get('net_without_top5_usd')} |")
-    for md in ('fixed', 'stopentry'):
+    for md in ('fixed', 'stopentry') + (('fixed_regime',) if regime else ()):
       lines += ['', f'## По годам ({md} / realistic)', '']
       for side in ('long', 'short'):
         lines.append(f'**{side}**')

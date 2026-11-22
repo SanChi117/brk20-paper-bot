@@ -21,8 +21,14 @@ jobs:
         run: |
           if [ ! -f data/receipt.csv ]; then python research/fetch_vision.py --start 2021-01 --end 2026-10 --out data; fi
           tail -n +2 data/receipt.csv | cut -d, -f4 | sort | uniq -c
+      - uses: actions/cache@v4
+        with:
+          path: data_btc
+          key: vision-btc-1h-2020-01-2026-10-v1
+      - name: Fetch BTCUSDT (regime filter only, not traded)
+        run: if [ ! -f data_btc/receipt.csv ]; then python research/fetch_vision.py --start 2020-01 --end 2026-10 --symbols BTCUSDT --out data_btc; fi
       - name: Run BRK-20 / BRK-20S backtest
-        run: python research/brk20_backtest.py --data data --out results
+        run: python research/brk20_backtest.py --data data --btc data_btc --out results
       - run: cat results/REPORT.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
