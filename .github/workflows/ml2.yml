@@ -1,0 +1,26 @@
+name: ml-portfolio
+on:
+  workflow_dispatch:
+  push:
+    branches: ['mme/label-study']
+    paths: ['ml/portfolio.py', 'ml/PREREG2.md', '.github/workflows/ml2.yml']
+jobs:
+  pf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy pandas lightgbm
+      - uses: actions/cache@v4
+        with:
+          path: mme_data
+          key: mme-1h-oicontracts-funding-24sym-2021-10-2026-10-v2
+      - uses: actions/cache@v4
+        with:
+          path: ml_data
+          key: ml-metrics-premium-24sym-2021-12-2026-10-v1
+      - run: ls mme_data | wc -l; ls ml_data | wc -l
+      - run: python -u ml/portfolio.py mme_data ml_data
+      - run: cat ml_out/PORTFOLIO.md >> "$GITHUB_STEP_SUMMARY"

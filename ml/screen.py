@@ -75,12 +75,18 @@ def build(sym):
     tt = pd.to_datetime(idx + H, unit='ms', utc=True)
     f['hs'] = np.sin(2 * np.pi * tt.hour / 24); f['hc'] = np.cos(2 * np.pi * tt.hour / 24); f['dow'] = tt.dayofweek
     # цели (от закрытия бара t)
-    f['y4'] = np.log(c.shift(-4) / c); f['y24'] = np.log(c.shift(-24) / c)
+    f['y4'] = np.log(c.shift(-4) / c); f['y24'] = np.log(c.shift(-24) / c); f['y72'] = np.log(c.shift(-72) / c)
+    f['cl'] = c
+    if len(fu):
+        e1 = np.searchsorted(fu.t.values, idx + H, side='right'); e2 = np.searchsorted(fu.t.values, idx + 25 * H, side='right')
+        f['f24'] = cs[e2] - cs[e1]   # фандинг, выплаченный в следующие 24ч (для учёта в доходности, не признак)
+    else:
+        f['f24'] = 0.0
     f['sym'] = sym
     return f
 
 
-def main():
+def dataset():
     syms = sorted(os.path.basename(p)[:-7] for p in glob.glob(f'{D1}/*_1h.csv'))
     F = {s: build(s) for s in syms}
     b = F['BTCUSDT']
@@ -94,9 +100,15 @@ def main():
             df['cs_' + col] = df.groupby('t')[col].rank(pct=True)
     df['ns'] = df.groupby('t').sym.transform('count')
     df['y24_rel'] = df.y24 - df.groupby('t').y24.transform('mean')
-    feats = [c for c in df.columns if c not in ('t', 'sym', 'y4', 'y24', 'y24_rel', 'ns')]
+    df['y72_rel'] = df.y72 - df.groupby('t').y72.transform('mean')
+    feats = [c for c in df.columns if not c.startswith('y') and c not in ('t', 'sym', 'ns', 'cl', 'f24')]
     df[feats] = df[feats].astype('float32')
     print('rows', len(df), 'features', len(feats), flush=True)
+    return syms, df, feats
+
+
+def main():
+    syms, df, feats = dataset()
     targets = {'rel24': ('y24_rel', 24), 'dir4': ('y4', 4), 'dir24': ('y24', 24)}
     P = dict(objective='regression', learning_rate=0.03, num_leaves=31, min_data_in_leaf=1000, feature_fraction=0.7,
              bagging_fraction=0.7, bagging_freq=1, lambda_l2=10, verbose=-1, num_threads=os.cpu_count())

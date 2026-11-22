@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: ['mme/label-study']
-    paths: ['ml/**', '.github/workflows/ml.yml']
+    paths: ['ml/screen.py', 'ml/fetch_extra.py', '.github/workflows/ml.yml']
 jobs:
   ml:
     runs-on: ubuntu-latest
