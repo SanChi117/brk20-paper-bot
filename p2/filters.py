@@ -40,7 +40,7 @@ def collect(pairs, reg):
                 if not r:
                     continue
                 i = e['i']; tt = pd.Timestamp(int(d['t'][i]) + H, unit='ms')
-                row = dict(R=r[0], t=r[1], tag=tag, s=e['s'], hour=tt.hour, dow=tt.dayofweek, fz=f['fz'][i])
+                row = dict(R=r[0], t=r[1], tx=r[2], sym=s, tag=tag, s=e['s'], hour=tt.hour, dow=tt.dayofweek, fz=f['fz'][i])
                 if mt:
                     row.update(div=e['s'] * mt['div_z'][i], ttd=e['s'] * mt['tt_d24'][i], glz=e['s'] * mt['gl_z'][i])
                 out.append(row)
@@ -79,6 +79,18 @@ def main():
     L += table(df, 'fz', [-99, -1, 1, 99], ['фандинг низкий', 'обычный', 'фандинг высокий'], 'Фандинг (z) — без знака сделки')
     df['fzs'] = df.fz * df.s
     L += table(df, 'fzs', [-99, -1, 1, 99], ['толпа платит против пробоя', 'обычно', 'толпа переплачивает за пробой'], 'Фандинг со знаком сделки')
+    import robust_ema as RE
+    L += ['## Капитал: 54 монеты, риск 0.3% на первую часть, до 8 позиций', '',
+          '| вариант | сделок до июня 2026 | 2022–май 2026: капитал / год / просадка | июнь–окт 2026: капитал / просадка |', '|---|---|---|---|']
+    rules = [('v1.1 без фильтров', lambda x: True),
+             ('v1.2: без сигналов выходного дня', lambda x: x.dow < 5),
+             ('v1.2 + топ-трейдеры не против (z ≥ −0.5)', lambda x: x.dow < 5 and not (x.div < -0.5)),
+             ('v1.2 + толпа не в сторону пробоя (z ≤ 1)', lambda x: x.dow < 5 and not (x.glz > 1))]
+    recs = df.to_dict('records')
+    for name, fn in rules:
+        sub = [dict(R=x['R'], t=x['t'], tx=x['tx'], sym=x['sym']) for x in recs if fn(pd.Series(x))]
+        a = RE.equity([x for x in sub if x['t'] < HOLD], 0.003, 8); b = RE.equity([x for x in sub if x['t'] >= HOLD], 0.003, 8)
+        L.append(f"| {name} | {sum(1 for x in sub if x['t'] < HOLD)} | ×{a[0]:.2f} / {(a[0]**(1/4.33)-1)*100:+.0f}% / {a[1]*100:.0f}% | ×{b[0]:.2f} / {b[1]*100:.0f}% |")
     os.makedirs('p2_out', exist_ok=True); open('p2_out/FILTERS.md', 'w').write('\n'.join(L) + '\n'); print('\n'.join(L))
 
 
