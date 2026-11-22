@@ -132,12 +132,12 @@ def run(data_syms, side, mode, cost, fund_all, start_ms=None, end_ms=None):
         if long:
             if h < e * (1 + c['slip']):
                 return False
-            fill = (max(e, o) if mode == 'fixed' else e) * (1 + c['slip'])
+            fill = (max(e, o) if mode != 'legacy' else e) * (1 + c['slip'])
             sf = (fill - p['stop']) / fill
         else:
             if l > e * (1 - c['slip']):
                 return False
-            fill = (min(e, o) if mode == 'fixed' else e) * (1 - c['slip'])
+            fill = (min(e, o) if mode != 'legacy' else e) * (1 - c['slip'])
             sf = (p['stop'] - fill) / fill
         pend.remove(p)
         if sf <= 0 or sf > 0.20:
@@ -150,7 +150,7 @@ def run(data_syms, side, mode, cost, fund_all, start_ms=None, end_ms=None):
              'be': fill * (1 + 2 * sf) if long else fill * (1 - 2 * sf),
              'chase': abs(fill / e - 1)}
         pos.append(q)
-        if mode == 'fixed' and ((long and l <= q['stop']) or (not long and h >= q['stop'])):
+        if mode != 'legacy' and ((long and l <= q['stop']) or (not long and h >= q['stop'])):
             close(q, q['stop'] * (1 - c['slip'] if long else 1 + c['slip']), t, 'stop_fillbar')
         return True
 
@@ -169,7 +169,7 @@ def run(data_syms, side, mode, cost, fund_all, start_ms=None, end_ms=None):
                 p['fund'] += (-rate if long else rate) * p['notional']
             stop = p['stop']
             if (long and l <= stop) or (not long and h >= stop):
-                if mode == 'fixed':
+                if mode != 'legacy':
                     px = (min(o, stop) * (1 - c['slip'])) if long else (max(o, stop) * (1 + c['slip']))
                 else:
                     px = stop * (1 - c['slip']) if long else stop * (1 + c['slip'])
@@ -201,7 +201,7 @@ def run(data_syms, side, mode, cost, fund_all, start_ms=None, end_ms=None):
 
     for X in hours:  # X = момент ПОСЛЕ закрытия часа, начавшегося в X - H... используем t = X как открытие бара
         # 1) сигналы на закрытии 4h-бара, открывшегося в X - H4 (закрылся в X)
-        if X % H4 == 0:
+        if X % H4 == 0 and mode != 'stopentry':
             t4 = X - H4
             for sym, S in syms.items():
                 i = S.idx.get(t4)
@@ -231,6 +231,19 @@ def run(data_syms, side, mode, cost, fund_all, start_ms=None, end_ms=None):
         for sym in SYMS:
             if sym in syms and (any(p['sym'] == sym for p in pos) or any(p['sym'] == sym for p in pend)):
                 process_bar(sym, t)
+        if X % H4 == 0 and mode == 'stopentry':
+            # Заранее выставленный стоп-ордер на уровне канала для бара, открывающегося в X.
+            # Уровень chan[j] считается только по барам < j, ATR — по последнему закрытому бару.
+            for sym, S in syms.items():
+                pend[:] = [p for p in pend if p['sym'] != sym]
+                j = S.idx.get(X)
+                if j is None or j < 131 or S.chan[j] is None or not S.atr[j - 1]:
+                    continue
+                if any(p['sym'] == sym for p in pos):
+                    continue
+                lvl = S.chan[j]
+                stop = lvl - 1.75 * S.atr[j - 1] if long else lvl + 1.75 * S.atr[j - 1]
+                pend.append({'sym': sym, 'entry': lvl, 'stop': stop, 'exp': X + H4 - H, 'active_from': X})
         if X % (24 * H) == 0:
             curve.append((X, eq))
             peak = max(peak, eq)
@@ -288,7 +301,7 @@ def main():
     lines = ['# BRK-20 / BRK-20S — проверка на истории Binance USD-M Futures', '',
              'Данные: официальные месячные архивы data.binance.vision (1h + funding), SHA256 проверены.', '']
     for side in ('long', 'short'):
-        for mode in ('legacy', 'fixed'):
+        for mode in ('legacy', 'fixed', 'stopentry'):
             for cost in ('botfees', 'realistic'):
                 trades, curve, maxdd, eq = run(raw, side, mode, cost, fund)
                 months = (curve[-1][0] - curve[0][0]) / (30.44 * 24 * H) if curve else None
@@ -324,13 +337,14 @@ def main():
     for k, s in report['runs'].items():
         lines.append(f"| {k} | {s['trades']} | {s.get('trades_per_month')} | {s['winrate_pct']} | {s['pf']} | {s['pf_ci90']} | "
                      f"{s['avg_r']} | {s.get('return_pct')} | {s.get('max_dd_pct')} | {s.get('net_without_top5_usd')} |")
-    lines += ['', '## По годам (fixed / realistic)', '']
-    for side in ('long', 'short'):
+    for md in ('fixed', 'stopentry'):
+      lines += ['', f'## По годам ({md} / realistic)', '']
+      for side in ('long', 'short'):
         lines.append(f'**{side}**')
         lines.append('')
         lines.append('| Год | Сделок | WR % | PF | Ср. R | $ |')
         lines.append('|---|---|---|---|---|---|')
-        for y, s in report['runs'][f'{side}/fixed/realistic']['by_year'].items():
+        for y, s in report['runs'][f'{side}/{md}/realistic']['by_year'].items():
             lines.append(f"| {y} | {s['trades']} | {s['winrate_pct']} | {s['pf']} | {s['avg_r']} | {s['net_usd']} |")
         lines.append('')
     with open(os.path.join(a.out, 'report.json'), 'w') as f:
