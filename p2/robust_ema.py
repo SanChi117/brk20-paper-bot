@@ -33,7 +33,7 @@ def exit_time(D, F, EVs, n_ema, maxh):
             for j in range(j0, min(j0 + maxh, len(c))):
                 if (sd == 1 and l[j] <= stop) or (sd == -1 and h[j] >= stop) or (sd == 1 and c[j] < em[j]) or (sd == -1 and c[j] > em[j]):
                     tx = t[j] + H; break
-            res.append(dict(R=r[0], t=r[1], tx=int(tx), sym=s))
+            res.append(dict(R=r[0], t=r[1], tx=int(tx), sym=s, s=e['s'], rg=e['rg']))
     return res
 
 
