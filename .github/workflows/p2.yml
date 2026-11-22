@@ -18,5 +18,5 @@ jobs:
           path: mme_data
           key: mme-1h-oicontracts-funding-24sym-2021-10-2026-10-v2
       - run: if [ ! -f mme_data/receipt.csv ]; then python -u mme/fetch.py --out mme_data; fi
-      - run: python -u p2/exits.py mme_data
-      - run: cat p2_out/EXITS.md >> "$GITHUB_STEP_SUMMARY"
+      - run: python -u p2/robust_ema.py mme_data
+      - run: cat p2_out/ROBUST_EMA.md >> "$GITHUB_STEP_SUMMARY"
