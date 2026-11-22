@@ -22,5 +22,5 @@ jobs:
           if [ ! -f mme_data/receipt.csv ]; then python -u mme/fetch.py --out mme_data; fi
           tail -n +2 mme_data/receipt.csv | awk -F, '{print $2, $4}' | sort | uniq -c
       - name: Label study
-        run: python -u mme/label_study.py mme_data
-      - run: cat mme_out/REPORT.md >> "$GITHUB_STEP_SUMMARY"
+        run: python -u mme/label_study.py mme_data && python -u mme/p1_backtest.py mme_data
+      - run: cat mme_out/REPORT.md mme_out/P1_REPORT.md >> "$GITHUB_STEP_SUMMARY"
