@@ -48,6 +48,7 @@ class Bars:
         n = len(h)
         self.fh, self.fl = [], []          # (price, k, t_conf, t_swept)
         self.raids = {1: [], -1: []}       # side -> list (t_known, level, extreme, j)
+        self.bos = {1: [], -1: []}         # side -> list (t_known, level, j): закрытие за последним фракталом
         self.trend = np.zeros(n, np.int8); self.pda_mid = np.full(n, np.nan)
         hh, hl = [], []                    # heaps of unswept: (price,idx) / (-price,idx)
         lastfh = lastfl = None             # (price, k)
@@ -64,8 +65,10 @@ class Bars:
                     self.raids[1].append((tc[j], p, l[j], j))
             # BOS
             if lastfh is not None and c[j] > lastfh[0]:
+                self.bos[1].append((tc[j], lastfh[0], j))
                 tr = 1; strong = l[lastfh[1]:j + 1].min(); ext = h[j]; lastfh = None
             elif lastfl is not None and c[j] < lastfl[0]:
+                self.bos[-1].append((tc[j], lastfl[0], j))
                 tr = -1; strong = h[lastfl[1]:j + 1].max(); ext = l[j]; lastfl = None
             if tr == 1:
                 ext = max(ext, h[j])
@@ -81,6 +84,19 @@ class Bars:
                     self.fh.append([h[k], k, tc[j], None]); heapq.heappush(hh, (h[k], len(self.fh) - 1)); lastfh = (h[k], k)
                 if l[k] < l[k - 1] and l[k] < l[j]:
                     self.fl.append([l[k], k, tc[j], None]); heapq.heappush(hl, (-l[k], len(self.fl) - 1)); lastfl = (l[k], k)
+        self.bos_t = {k: [b[0] for b in self.bos[k]] for k in (1, -1)}
+        def strong(F, hi):
+            out = []
+            for p, k, tconf, tsw in F:
+                if 2 <= k < n - 2:
+                    nb = (h if hi else l)[[k - 2, k - 1, k + 1, k + 2]]
+                    if (hi and p >= nb.max()) or (not hi and p <= nb.min()):
+                        tc2 = tc[k + 2]
+                        if tsw is None or tsw > tc2:
+                            out.append([p, k, tc2, tsw])
+            out.sort(key=lambda x: x[2]); return out
+        self.sfh, self.sfl = strong(self.fh, True), strong(self.fl, False)
+        self.sfh_t = [f[2] for f in self.sfh]; self.sfl_t = [f[2] for f in self.sfl]
         self.fh_t = [f[2] for f in self.fh]; self.fl_t = [f[2] for f in self.fl]
         self.raid_t = {s: [r[0] for r in self.raids[s]] for s in (1, -1)}
         self.raid_bar = {s: {r[3] for r in self.raids[s]} for s in (1, -1)}
@@ -115,6 +131,10 @@ class Bars:
                         Z.append((1, 'RB', lo, top, j, True))
                 elif {i, j} & self.sweep_bar[1] and c[j] > o[i]:
                     Z.append((1, 'OB', lo, o[i], j, True))
+                    top2 = max(h[i], h[j])
+                    for k in range(j + 1, min(n, j + 4)):
+                        if c[k] > top2:
+                            Z.append((1, 'SNR', lo, o[i], k, True)); break
             if c[i] > o[i] and c[j] < o[j]:
                 hi = max(h[i], h[j])
                 if {i, j} & self.raid_bar[-1]:
@@ -123,6 +143,10 @@ class Bars:
                         Z.append((-1, 'RB', bot, hi, j, True))
                 elif {i, j} & self.sweep_bar[-1] and c[j] < o[i]:
                     Z.append((-1, 'OB', o[i], hi, j, True))
+                    bot2 = min(l[i], l[j])
+                    for k in range(j + 1, min(n, j + 4)):
+                        if c[k] < bot2:
+                            Z.append((-1, 'SNR', o[i], hi, k, True)); break
         # инвалидация закрытием на своём ТФ за дальней границей
         self.Z = []
         Hn = HORIZON[self.P]
@@ -135,6 +159,7 @@ class Bars:
             touch = np.nonzero(l[j + 1:e] <= hi if s == 1 else h[j + 1:e] >= lo)[0]
             ttf = tc[j + 1 + touch[0]] - self.P if len(touch) else dead  # начало бара касания
             self.Z.append(dict(s=s, typ=typ, lo=lo, hi=hi, t=tc[j], inv=inv, touch_tf=ttf, liq=liq, atr=self.atr[j]))
+        self.Z.sort(key=lambda z: z['t'])
         self.Zt = {s: [z['t'] for z in self.Z if z['s'] == s] for s in (1, -1)}
         self.Zs = {s: [z for z in self.Z if z['s'] == s] for s in (1, -1)}
 
@@ -142,11 +167,16 @@ class Bars:
         """индекс последнего бара, закрытого не позже T"""
         return int(np.searchsorted(self.tc, T, side='right')) - 1
 
-    def fta(self, s, T, entry):
-        """ближайшая проблемная зона по направлению: неснятый фрактал или непротестированная встречная зона"""
+    def fta(self, s, T, entry, strong=False):
+        """ближайшая проблемная зона по направлению: неснятый фрактал или непротестированная встречная зона;
+        strong=True — только значимая ликвидность (свинг 2+2 бара), без зон"""
         best = math.inf if s == 1 else -math.inf
-        F = self.fh if s == 1 else self.fl
-        ft = self.fh_t if s == 1 else self.fl_t
+        if strong:
+            F = self.sfh if s == 1 else self.sfl
+            ft = self.sfh_t if s == 1 else self.sfl_t
+        else:
+            F = self.fh if s == 1 else self.fl
+            ft = self.fh_t if s == 1 else self.fl_t
         b = bisect.bisect_right(ft, T)
         for f in F[max(0, b - 400):b]:
             if f[2] <= T and (f[3] is None or f[3] > T):
@@ -154,7 +184,7 @@ class Bars:
                 if (s == 1 and entry < p < best) or (s == -1 and best < p < entry):
                     best = p
         zt = self.Zt[-s]; b = bisect.bisect_right(zt, T)
-        for z in self.Zs[-s][max(0, b - 600):b]:
+        for z in ([] if strong else self.Zs[-s][max(0, b - 600):b]):
             if z['t'] <= T and z['touch_tf'] > T and z['inv'] > T:
                 p = z['lo'] if s == 1 else z['hi']
                 if (s == 1 and entry < p < best) or (s == -1 and best < p < entry):
@@ -187,17 +217,21 @@ class Exec:
         return self.l[a:b].min() if s == 1 else self.h[a:b].max()
 
 
-DEFAULT = dict(daily=True, pda=False, h4trend=False, models='AB', z4=('FVG', 'OB', 'RB'), z1=('FVG', 'OB', 'RB'),
-               z15=('FVG', 'OB'), fvg_liq=False, rr=2.0, session=True)
+DEFAULT = dict(daily=True, pda=False, h4trend=False, models='AB', z4=('FVG', 'SNR', 'RB'), z1=('FVG', 'SNR', 'RB'),
+               z15=('FVG', 'SNR'), fvg_liq=False, rr=2.0, session=True, bos=True, strong_tgt=True)
+V1 = dict(z4=('FVG', 'OB', 'RB'), z1=('FVG', 'OB', 'RB'), z15=('FVG', 'OB'), bos=False, strong_tgt=False)
 VARIANTS = {
     'base': {},
+    'v1_rules': V1,
+    'no_bos': dict(bos=False),
+    'near_tgt': dict(strong_tgt=False),
     'no_daily': dict(daily=False),
     'pda': dict(pda=True),
     'h4trend': dict(h4trend=True),
     'only_A': dict(models='A'),
     'only_B': dict(models='B'),
     'z4_fvg': dict(z4=('FVG',)),
-    'z4_ob_rb': dict(z4=('OB', 'RB')),
+    'z4_snr_rb': dict(z4=('SNR', 'RB')),
     'fvg_liq': dict(fvg_liq=True),
     'rr3': dict(rr=3.0),
     'no_session': dict(session=False),
@@ -288,8 +322,19 @@ def simulate(sym, D, B4, B1, B15, E, cfg):
 
 
 def make_order(s, B1, Btgt, B15, E, Tstart, T1, Tlim, model, cfg):
-    """ищем 15m VC после T1, ставим лимит на его ближней границе"""
-    for z in vc15(B15, s, T1, Tlim, cfg):
+    """ищем 15m VC после T1, ставим лимит на его ближней границе.
+    bos=True: VC должен быть частью импульса, который сломал локальную 15m структуру (закрытие за последним фракталом)"""
+    if cfg['bos']:
+        bt = B15.bos_t[s]; a = bisect.bisect_right(bt, T1); b = bisect.bisect_right(bt, Tlim)
+        if a >= b:
+            return None
+        tb = B15.bos[s][a][0]
+        zs = list(vc15(B15, s, tb - 4 * M15, min(tb + 2 * M15, Tlim), cfg))
+    else:
+        zs = vc15(B15, s, T1, Tlim, cfg)
+    for z in zs:
+        if z['t'] <= T1:
+            continue
         ext = E.extreme(s, Tstart, z['t'])     # Strong Low/High: экстремум с начала теста до появления VC
         if ext is None:
             continue
@@ -302,7 +347,7 @@ def make_order(s, B1, Btgt, B15, E, Tstart, T1, Tlim, model, cfg):
         risk = abs(entry - stop)
         if risk <= 0 or risk > 3 * a1:
             continue
-        tp = Btgt.fta(s, z['t'], entry)
+        tp = Btgt.fta(s, z['t'], entry, cfg['strong_tgt'])
         if tp is None:
             continue
         cost = entry * (FEE_MAKER * 2)
@@ -437,9 +482,11 @@ def main():
     L += ['', '## base по звеньям (dev)', '| срез | сделок | WR | avgR | PF | ΣR | maxDD R | ΣR без топ-5 |', '|---|---|---|---|---|---|---|---|']
     dev = [x for x in base if x['t_entry'] < HOLD]
     for lab, f in [('модель A', lambda x: x['model'] == 'A'), ('модель B', lambda x: x['model'] == 'B'),
-                   ('15m VC = FVG', lambda x: x['typ'] == 'FVG'), ('15m VC = OB', lambda x: x['typ'] == 'OB'),
+                   ('15m VC = FVG', lambda x: x['typ'] == 'FVG'), 
                    ('лонг', lambda x: x['s'] == 1), ('шорт', lambda x: x['s'] == -1)]:
         L.append(f'| {lab} ' + fmt(stats([x for x in dev if f(x)])))
+    for lab in ('SNR', 'RB'):
+        L.append(f'| 15m VC = {lab} ' + fmt(stats([x for x in dev if x['typ'] == lab])))
     eq, mdd = equity([x for x in base if x['t_entry'] < HOLD])
     eqh, mddh = equity([x for x in base if x['t_entry'] >= HOLD])
     L += ['', f'Капитал при риске 1%/сделку (base): dev ×{eq:.2f}, maxDD {mdd*100:.0f}%; holdout ×{eqh:.2f}, maxDD {mddh*100:.0f}%.']
