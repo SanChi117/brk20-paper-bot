@@ -1,0 +1,24 @@
+name: trend-portfolio
+on:
+  workflow_dispatch:
+  push:
+    branches: ['mme/trend-portfolio']
+    paths: ['trend/**', '.github/workflows/trend.yml']
+jobs:
+  trend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy
+      - uses: actions/cache@v4
+        with:
+          path: trend_data
+          key: trend-1d-all-usdtm-2020-09-2026-10-v1
+      - name: Fetch daily klines + funding (all USDT-M incl. delisted)
+        run: if [ ! -f trend_data/BTCUSDT_1d.csv ]; then python -u trend/fetch_daily.py trend_data; fi; ls trend_data | wc -l
+      - name: Backtest
+        run: python -u trend/backtest.py trend_data
+      - run: cat trend_out/REPORT.md >> "$GITHUB_STEP_SUMMARY"
