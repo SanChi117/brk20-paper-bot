@@ -1,0 +1,27 @@
+name: ml-screen
+on:
+  workflow_dispatch:
+  push:
+    branches: ['mme/label-study']
+    paths: ['ml/**', '.github/workflows/ml.yml']
+jobs:
+  ml:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy pandas lightgbm
+      - uses: actions/cache@v4
+        with:
+          path: mme_data
+          key: mme-1h-oicontracts-funding-24sym-2021-10-2026-10-v2
+      - run: if [ ! -f mme_data/receipt.csv ]; then python -u mme/fetch.py --out mme_data; fi
+      - uses: actions/cache@v4
+        with:
+          path: ml_data
+          key: ml-metrics-premium-24sym-2021-12-2026-10-v1
+      - run: if [ ! -f ml_data/BTCUSDT_metrics.csv ]; then python -u ml/fetch_extra.py ml_data; fi; wc -l ml_data/BTCUSDT_*.csv
+      - run: python -u ml/screen.py mme_data ml_data
+      - run: cat ml_out/REPORT.md >> "$GITHUB_STEP_SUMMARY"
