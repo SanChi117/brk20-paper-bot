@@ -17,7 +17,7 @@ def symbols():
         if '<IsTruncated>true</IsTruncated>' not in x or not ps:
             break
         marker = f'data/futures/um/monthly/klines/{ps[-1]}/'
-    return sorted({s for s in out if s.endswith('USDT') and '_' not in s})
+    return sorted({s for s in out if s.endswith('USDT') and s.isascii() and s.isalnum()})
 
 
 def kl(sym, mo):
