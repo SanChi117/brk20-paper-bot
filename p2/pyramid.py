@@ -84,6 +84,14 @@ def main():
         a = RE.equity([x for x in best[name] if x['t'] < HOLD], 0.005, 8)
         b = RE.equity([x for x in best[name] if x['t'] >= HOLD], 0.005, 8)
         L.append(f'- {name}: 2022–май 2026 ×{a[0]:.2f}, просадка {a[1]*100:.0f}%; июнь–окт 2026 ×{b[0]:.2f}, просадка {b[1]*100:.0f}%')
+    L += ['', '## Равная просадка: база v1 против добора +1R (стоп не трогать), разный риск на первую часть']
+    for name in ('v1 без добора (база)', 'добор на +1R, стоп не трогать'):
+        for r in (0.003, 0.0035, 0.004, 0.005):
+            a = RE.equity([x for x in best[name] if x['t'] < HOLD], r, 8)
+            b = RE.equity([x for x in best[name] if x['t'] >= HOLD], r, 8)
+            yrs = 4.33
+            L.append(f'- {name}, риск {r*100:.2f}%: ×{a[0]:.2f} (≈{(a[0]**(1/yrs)-1)*100:+.0f}%/год), просадка {a[1]*100:.0f}%; '
+                     f'июнь–окт ×{b[0]:.2f}, просадка {b[1]*100:.0f}%')
     os.makedirs('p2_out', exist_ok=True); open('p2_out/PYRAMID.md', 'w').write('\n'.join(L) + '\n'); print('\n'.join(L))
 
 
