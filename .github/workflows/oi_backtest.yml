@@ -1,0 +1,38 @@
+name: oi-backtest
+on:
+  workflow_dispatch:
+  push:
+    branches: ['research/**']
+    paths: ['research/oi_flush_backtest.py', 'research/fetch_metrics.py', '.github/workflows/oi_backtest.yml']
+jobs:
+  oi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        with:
+          path: data
+          key: vision-1h-2021-01-2026-10-v1
+      - uses: actions/cache@v4
+        with:
+          path: data_btc
+          key: vision-btc-1h-2020-01-2026-10-v1
+      - uses: actions/cache@v4
+        with:
+          path: data_metrics
+          key: vision-metrics-1h-2022-01-01-2026-10-31-v1
+      - name: Fetch prices / BTC if cache miss
+        run: |
+          if [ ! -f data/receipt.csv ]; then python research/fetch_vision.py --start 2021-01 --end 2026-10 --out data; fi
+          if [ ! -f data_btc/receipt.csv ]; then python research/fetch_vision.py --start 2020-01 --end 2026-10 --symbols BTCUSDT --out data_btc; fi
+      - name: Fetch Binance metrics (OI, 5-min daily archives, SHA256)
+        run: |
+          if [ ! -f data_metrics/receipt.csv ]; then python research/fetch_metrics.py --start 2022-01-01 --end 2026-10-31 --out data_metrics; fi
+          tail -n +2 data_metrics/receipt.csv | cut -d, -f3 | sort | uniq -c
+      - name: Run candidate B
+        run: python research/oi_flush_backtest.py --data data --metrics data_metrics --btc data_btc --out results_oi
+      - run: cat results_oi/REPORT.md >> "$GITHUB_STEP_SUMMARY"
