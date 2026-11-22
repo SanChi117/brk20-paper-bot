@@ -42,7 +42,7 @@ def equity(tr, risk, maxpos=5):
     for x in ev:
         op.sort(key=lambda y: y[0])
         while op and op[0][0] <= x['t']:
-            tx, st, R = op.pop(0); eq += st * R; pk = max(pk, eq); dd = max(dd, 1 - eq / pk)
+            tx, st, R, _ = op.pop(0); eq += st * R; pk = max(pk, eq); dd = max(dd, 1 - eq / pk)
             months[np.datetime64(int(tx), 'ms').astype('datetime64[M]')] = eq
         if len(op) < maxpos and not any(y[3] == x['sym'] for y in op):
             op.append((x['tx'], eq * risk, x['R'], x['sym'])); taken += 1
