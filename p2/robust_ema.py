@@ -86,7 +86,7 @@ def main():
         for lab, sub in (('2022–май 2026', [x for x in main_tr if x['t'] < HOLD]), ('июнь–окт 2026', [x for x in main_tr if x['t'] >= HOLD])):
             eq, dd, nt, mr = equity(sub, r)
             L.append(f'- риск {r*100:.0f}%, {lab}: ×{eq:.2f}, макс. просадка {dd*100:.0f}%, сделок взято {nt}, '
-                     f'месяцев в плюсе {np.mean(mr > 0)*100:.0f}%, медиана месяца {np.median(mr)*100:+.1f}%, худший месяц {mr.min()*100:+.1f}%')
+                     (f'месяцев в плюсе {np.mean(mr > 0)*100:.0f}%, медиана месяца {np.median(mr)*100:+.1f}%, худший месяц {mr.min()*100:+.1f}%' if len(mr) else ''))
     os.makedirs('p2_out', exist_ok=True); open('p2_out/ROBUST_EMA.md', 'w').write('\n'.join(L) + '\n'); print('\n'.join(L))
 
 
