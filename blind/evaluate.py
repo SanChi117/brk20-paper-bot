@@ -15,7 +15,7 @@ def main():
         k = key[s['id']]
         if s.get('side') in (None, 'none'):
             rows.append((s['id'], k['sym'], 'нет сетапа', None, None)); continue
-        a = np.loadtxt(f"{DATA}/{k['sym']}_1h.csv", delimiter=',', skiprows=1); a = a[np.argsort(a[:, 0])]
+        a = np.genfromtxt(f"{DATA}/{k['sym']}_1h.csv", delimiter=",", skip_header=1); a = a[np.argsort(a[:, 0])]
         f = a[a[:, 0] >= k['T']]; sc = k['k']
         side = 1 if s['side'] == 'long' else -1
         e = s['entry'] / sc; st = s['stop'] / sc; tp = s['tp'] / sc; exp = int(s.get('expiry_h', 48))

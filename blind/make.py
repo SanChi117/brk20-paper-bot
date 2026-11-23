@@ -16,7 +16,7 @@ DATA, ML, OUT, SEAL = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 
 
 def load1h(s):
-    a = np.loadtxt(f'{DATA}/{s}_1h.csv', delimiter=',', skiprows=1); a = a[np.argsort(a[:, 0])]
+    a = np.genfromtxt(f'{DATA}/{s}_1h.csv', delimiter=',', skip_header=1); a = a[np.argsort(a[:, 0])]
     return a  # t,o,h,l,c,qv,tbq,oi
 
 
