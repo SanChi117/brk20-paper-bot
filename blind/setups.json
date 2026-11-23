@@ -1,0 +1,322 @@
+[
+ {
+  "id": "01",
+  "side": "short",
+  "entry": 0.835,
+  "stop": 0.865,
+  "tp": 0.71,
+  "expiry_h": 48
+ },
+ {
+  "id": "02",
+  "side": "short",
+  "entry": 1.09,
+  "stop": 1.125,
+  "tp": 0.95,
+  "expiry_h": 48
+ },
+ {
+  "id": "03",
+  "side": "long",
+  "entry": 0.398,
+  "stop": 0.383,
+  "tp": 0.46,
+  "expiry_h": 48
+ },
+ {
+  "id": "04",
+  "side": "long",
+  "entry": 15.25,
+  "stop": 14.9,
+  "tp": 16.9,
+  "expiry_h": 48
+ },
+ {
+  "id": "05",
+  "side": "long",
+  "entry": 107,
+  "stop": 103.8,
+  "tp": 120,
+  "expiry_h": 48
+ },
+ {
+  "id": "06",
+  "side": "short",
+  "entry": 0.053,
+  "stop": 0.0545,
+  "tp": 0.047,
+  "expiry_h": 48
+ },
+ {
+  "id": "07",
+  "side": "short",
+  "entry": 0.1205,
+  "stop": 0.1222,
+  "tp": 0.1135,
+  "expiry_h": 48
+ },
+ {
+  "id": "08",
+  "side": "long",
+  "entry": 28200,
+  "stop": 27650,
+  "tp": 30400,
+  "expiry_h": 48
+ },
+ {
+  "id": "09",
+  "side": "long",
+  "entry": 199,
+  "stop": 194.5,
+  "tp": 222,
+  "expiry_h": 48
+ },
+ {
+  "id": "10",
+  "side": "short",
+  "entry": 230,
+  "stop": 235,
+  "tp": 208,
+  "expiry_h": 48
+ },
+ {
+  "id": "11",
+  "side": "long",
+  "entry": 0.89,
+  "stop": 0.865,
+  "tp": 0.99,
+  "expiry_h": 24
+ },
+ {
+  "id": "12",
+  "side": "long",
+  "entry": 18.0,
+  "stop": 17.3,
+  "tp": 21.5,
+  "expiry_h": 48
+ },
+ {
+  "id": "13",
+  "side": "long",
+  "entry": 0.222,
+  "stop": 0.2185,
+  "tp": 0.245,
+  "expiry_h": 48
+ },
+ {
+  "id": "14",
+  "side": "long",
+  "entry": 2.935,
+  "stop": 2.88,
+  "tp": 3.24,
+  "expiry_h": 48
+ },
+ {
+  "id": "15",
+  "side": "short",
+  "entry": 4.25,
+  "stop": 4.4,
+  "tp": 3.65,
+  "expiry_h": 48
+ },
+ {
+  "id": "16",
+  "side": "short",
+  "entry": 2.53,
+  "stop": 2.585,
+  "tp": 2.3,
+  "expiry_h": 48
+ },
+ {
+  "id": "17",
+  "side": "short",
+  "entry": 82.8,
+  "stop": 85.5,
+  "tp": 70.0,
+  "expiry_h": 48
+ },
+ {
+  "id": "18",
+  "side": "long",
+  "entry": 35.4,
+  "stop": 34.65,
+  "tp": 39.0,
+  "expiry_h": 48
+ },
+ {
+  "id": "19",
+  "side": "short",
+  "entry": 56.0,
+  "stop": 57.2,
+  "tp": 51.0,
+  "expiry_h": 48
+ },
+ {
+  "id": "20",
+  "side": "short",
+  "entry": 0.0212,
+  "stop": 0.0219,
+  "tp": 0.0182,
+  "expiry_h": 48
+ },
+ {
+  "id": "21",
+  "side": "long",
+  "entry": 0.32,
+  "stop": 0.313,
+  "tp": 0.355,
+  "expiry_h": 48
+ },
+ {
+  "id": "22",
+  "side": "long",
+  "entry": 0.5085,
+  "stop": 0.5015,
+  "tp": 0.545,
+  "expiry_h": 48
+ },
+ {
+  "id": "23",
+  "side": "long",
+  "entry": 145,
+  "stop": 139.5,
+  "tp": 170,
+  "expiry_h": 48
+ },
+ {
+  "id": "24",
+  "side": "short",
+  "entry": 0.655,
+  "stop": 0.672,
+  "tp": 0.57,
+  "expiry_h": 48
+ },
+ {
+  "id": "25",
+  "side": "long",
+  "entry": 0.1565,
+  "stop": 0.1545,
+  "tp": 0.168,
+  "expiry_h": 48
+ },
+ {
+  "id": "26",
+  "side": "long",
+  "entry": 1.86,
+  "stop": 1.825,
+  "tp": 2.05,
+  "expiry_h": 48
+ },
+ {
+  "id": "27",
+  "side": "long",
+  "entry": 0.0181,
+  "stop": 0.0174,
+  "tp": 0.0215,
+  "expiry_h": 48
+ },
+ {
+  "id": "28",
+  "side": "short",
+  "entry": 2.035,
+  "stop": 2.07,
+  "tp": 1.86,
+  "expiry_h": 48
+ },
+ {
+  "id": "29",
+  "side": "long",
+  "entry": 48.2,
+  "stop": 47.3,
+  "tp": 53.0,
+  "expiry_h": 48
+ },
+ {
+  "id": "30",
+  "side": "long",
+  "entry": 21.95,
+  "stop": 21.5,
+  "tp": 24.3,
+  "expiry_h": 48
+ },
+ {
+  "id": "31",
+  "side": "short",
+  "entry": 9.55,
+  "stop": 9.78,
+  "tp": 8.4,
+  "expiry_h": 48
+ },
+ {
+  "id": "32",
+  "side": "long",
+  "entry": 2.8,
+  "stop": 2.74,
+  "tp": 3.12,
+  "expiry_h": 48
+ },
+ {
+  "id": "33",
+  "side": "short",
+  "entry": 0.0302,
+  "stop": 0.0309,
+  "tp": 0.0267,
+  "expiry_h": 48
+ },
+ {
+  "id": "34",
+  "side": "long",
+  "entry": 203,
+  "stop": 196.5,
+  "tp": 235,
+  "expiry_h": 48
+ },
+ {
+  "id": "35",
+  "side": "short",
+  "entry": 12.68,
+  "stop": 12.88,
+  "tp": 11.7,
+  "expiry_h": 48
+ },
+ {
+  "id": "36",
+  "side": "short",
+  "entry": 1.335,
+  "stop": 1.36,
+  "tp": 1.21,
+  "expiry_h": 48
+ },
+ {
+  "id": "37",
+  "side": "long",
+  "entry": 50.5,
+  "stop": 48.0,
+  "tp": 62.0,
+  "expiry_h": 48
+ },
+ {
+  "id": "38",
+  "side": "short",
+  "entry": 6.98,
+  "stop": 7.12,
+  "tp": 6.3,
+  "expiry_h": 48
+ },
+ {
+  "id": "39",
+  "side": "long",
+  "entry": 1.215,
+  "stop": 1.195,
+  "tp": 1.32,
+  "expiry_h": 48
+ },
+ {
+  "id": "40",
+  "side": "short",
+  "entry": 5.5,
+  "stop": 5.62,
+  "tp": 4.95,
+  "expiry_h": 48
+ }
+]
