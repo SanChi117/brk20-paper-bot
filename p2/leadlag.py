@@ -43,6 +43,8 @@ def run(d, br, bz, AT, beta, V):
         if G is not None and gap < G * atrp[i]:
             continue
         j0 = i + 1; en = o[j0]; st = en - s * SB * AT[i]; risk = SB * AT[i]
+        if not (risk > en * 0.002) or d['qv'][i] <= 0:   # застывшие котировки / нулевой ATR
+            continue
         tp = en + s * gap * en if TPg else None
         x = None
         for j in range(j0, j0 + N):
