@@ -1,0 +1,20 @@
+name: listings-parity
+on:
+  workflow_dispatch:
+  push:
+    branches: ['auto/turtle']
+    paths: ['listings/parity_l.py', '.github/workflows/listings_parity.yml']
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: {ref: feat/terminal-v2, path: term}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/cache@v4
+        with: {path: all_data, key: turtle-1d-all-usdtm-2020-09-2026-10-v1}
+      - uses: actions/cache@v4
+        with: {path: listings_1h, key: listings-1h-first2m-v1}
+      - run: pip install numpy && python -u listings/study.py all_data listings_out > /dev/null && python -u listings/parity_l.py term
