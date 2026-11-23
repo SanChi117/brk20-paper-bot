@@ -21,5 +21,11 @@ jobs:
       - run: python -u listings/study.py all_data listings_out
       - run: python listings/diag.py listings_out/listings.csv
       - run: cat listings_out/REPORT.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/cache@v4
+        with:
+          path: listings_1h
+          key: listings-1h-first2m-v1
+      - run: python -u listings/hourly.py listings_out/listings.csv listings_1h
+      - run: cat listings_1h/REPORT.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with: {name: listings_out, path: listings_out}
