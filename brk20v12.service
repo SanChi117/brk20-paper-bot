@@ -1,0 +1,16 @@
+[Unit]
+Description=V1.2 paper bot (slot 3: strong breakout + EMA20, 54 coins)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/brk20
+ExecStart=/usr/bin/python3 /root/brk20/brk20v12.py
+Restart=always
+RestartSec=30
+StandardOutput=append:/root/brk20/stdout_slot3.log
+StandardError=append:/root/brk20/stdout_slot3.log
+
+[Install]
+WantedBy=multi-user.target

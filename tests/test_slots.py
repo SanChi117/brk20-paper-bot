@@ -145,5 +145,17 @@ class Listings(unittest.TestCase):
         self.assertGreater(st['eq'], 1000)
 
 
+class Web(unittest.TestCase):
+    def test_parity_verdicts_and_pools(self):
+        w = importlib.reload(importlib.import_module('brk20_web'))
+        tr = lambda r: {'r': r, 'r_usd': r * 10, 'out': 'ema20'}
+        self.assertEqual(w.parity('slot3', [tr(1)] * 5)['level'], 'wait')
+        self.assertEqual(w.parity('slot3', [tr(2), tr(-1)] * 15)['level'], 'ok')
+        self.assertEqual(w.parity('slot3', [tr(1), tr(-1)] * 15)['level'], 'warn')
+        self.assertEqual(w.parity('slot3', [tr(0.5), tr(-1)] * 15)['level'], 'bad')
+        self.assertEqual(len(w.POOL54), 54)
+        self.assertTrue(set(w.SYMS) <= w.allowed_syms())
+
+
 if __name__ == '__main__':
     unittest.main()
