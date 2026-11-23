@@ -19,16 +19,23 @@ jobs:
         with: {path: mme_data, key: mme-1h-oicontracts-funding-24sym-2021-10-2026-10-v2}
       - uses: actions/cache@v4
         with: {path: ml_data, key: ml-metrics-premium-24sym-2021-12-2026-10-v1}
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         with: {path: sealed, key: blind-sealed-v1}
       - name: Make charts (only if no sealed key yet)
+        env:
+          TOKEN: ${{ github.token }}
         run: |
           if [ ! -f sealed/key.json ]; then
             python -u blind/make.py mme_data ml_data charts sealed
-            git config user.name bot; git config user.email bot@users.noreply.github.com
-            git checkout --orphan blind-charts; git rm -rfq --cached . ; cp charts/*.png . 2>/dev/null; mkdir -p c; mv *.png c/
-            git add c; git commit -qm "blind charts"; git push -f origin blind-charts
-            git checkout -q mme/label-study
+            mkdir -p /tmp/pub/c && cp charts/*.png /tmp/pub/c/ && cd /tmp/pub
+            git init -q && git checkout -q -b blind-charts
+            git config user.name bot && git config user.email bot@users.noreply.github.com
+            git add c && git commit -qm "blind charts"
+            git push -qf "https://x-access-token:${TOKEN}@github.com/${{ github.repository }}" blind-charts
           else echo "charts already made"; fi
+      - name: Save sealed key
+        if: always()
+        uses: actions/cache/save@v4
+        with: {path: sealed, key: blind-sealed-v1}
       - name: Evaluate setups (only if setups file present)
         run: if [ -f blind/setups.json ]; then python -u blind/evaluate.py mme_data sealed blind/setups.json | tee -a "$GITHUB_STEP_SUMMARY"; else echo "no setups yet"; fi
