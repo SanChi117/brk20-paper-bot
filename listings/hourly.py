@@ -101,8 +101,10 @@ def leverage(data):
         i, st = en; sd = st / k[i][1] - 1
         if sd <= 0.01 or sd > 0.4:
             continue
-        R, _ = sim(k, i, st, 0.25); T.append(dict(LAST, R=R, sd=sd))
+        R, _ = sim(k, i, st, 0.25); T.append(dict(LAST, R=R, sd=sd, sym=r['sym']))
     T.sort(key=lambda x: x['t0'])
+    for x in T:
+        print(f"TRADE,{x['sym']},{int(x['t0'])},{int(x['t1']) + H},{x['R']:.4f}")
     yrs = (T[-1]['t0'] - T[0]['t0']) / (365.25 * 24 * H); rate = len(T) / yrs
     out = ['', f'## Плечо и высокий риск: правило «под открытие», тейк −25% ({len(T)} сделок за {yrs:.1f} лет, ≈{rate:.0f} в год)', '']
 
