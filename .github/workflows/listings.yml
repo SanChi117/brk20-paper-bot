@@ -1,0 +1,24 @@
+name: listings
+on:
+  workflow_dispatch:
+  push:
+    branches: ['auto/turtle']
+    paths: ['listings/**', '.github/workflows/listings.yml']
+jobs:
+  study:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy
+      - uses: actions/cache@v4
+        with:
+          path: all_data
+          key: turtle-1d-all-usdtm-2020-09-2026-10-v1
+      - run: if [ ! -f all_data/BTCUSDT_1d.csv ]; then python -u turtle/fetch_all.py all_data; fi; ls all_data | wc -l
+      - run: python -u listings/study.py all_data listings_out
+      - run: cat listings_out/REPORT.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with: {name: listings_out, path: listings_out}
