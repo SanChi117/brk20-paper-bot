@@ -78,6 +78,25 @@ def mc(mr, months, n=20000, start=600.0, block=3, seed=5):
             f"{(res >= 5000).mean() * 100:.1f}% | {(res >= 30000).mean() * 100:.1f}%")
 
 
+def mc_add(mr, months, add, n=20000, start=600.0, block=3, seed=5):
+    g = np.random.default_rng(seed); M = len(mr); res = np.empty(n)
+    for i in range(n):
+        eq, m = start, 0
+        while m < months:
+            b0 = g.integers(0, M - block + 1)
+            for k in range(block):
+                if m >= months:
+                    break
+                if m > 0:
+                    eq += add
+                eq *= 1 + mr[b0 + k]; m += 1
+        res[i] = eq
+    inv = start + add * (months - 1)
+    q = np.percentile(res, [10, 25, 50, 75, 90])
+    return (f"${inv:,.0f} | ${q[0]:,.0f} | ${q[1]:,.0f} | ${q[2]:,.0f} | ${q[3]:,.0f} | ${q[4]:,.0f} | "
+            f"{(res < inv).mean() * 100:.0f}% | {(res >= 5000).mean() * 100:.0f}% | {(res >= 30000).mean() * 100:.1f}%")
+
+
 def main():
     d1, d2 = sys.argv[1], sys.argv[2]
     lst = [dict(k='l', sym=r['sym'], t=int(r['t']), tx=int(r['tx']), R=float(r['R'])) for r in csv.DictReader(open('p2/listing_trades.csv'))]
@@ -90,6 +109,16 @@ def main():
             eq, dd, mr, ys = sim(tr, rv, rl)
             L.append(f'| {rv * 100:.1f}% / {rl * 100:.0f}% | ×{eq:,.1f} / {dd * 100:.0f}% | {ys} | ' + mc(mr, 6) + ' | ' + mc(mr, 12) + ' |')
         L.append('')
+    L += ['## Пополнения каждый месяц (старт $600, взнос в начале месяцев 2…N)', '',
+          '| издержки | риск v1.2 / листинги | взнос | срок | вложено | 10% | 25% | медиана | 75% | 90% | итог меньше вложенного | ≥$5k | ≥$30k |',
+          '|---|---|---|---|---|---|---|---|---|---|---|---|---|']
+    for cm in (1, 2):
+        tr = v12(d1, d2, cm) + lst
+        for rv, rl in ((0.005, 0.05), (0.01, 0.1)):
+            mr = sim(tr, rv, rl)[2]
+            for add in (0, 100, 200):
+                for mo in (6, 12):
+                    L.append(f"| {'как в тесте' if cm == 1 else '×2'} | {rv * 100:.1f}% / {rl * 100:.0f}% | ${add} | {mo} мес | " + mc_add(mr, mo, add) + ' |')
     os.makedirs('p2_out', exist_ok=True); open('p2_out/PORTFOLIO.md', 'w').write('\n'.join(L) + '\n'); print('\n'.join(L))
 
 
