@@ -49,15 +49,21 @@ def sim(k, i, stop, tp, maxh=14 * 24):
     e = k[i][1]; sd = (stop - e) / e
     tpp = e * (1 - tp) if tp else None
     end = min(len(k), i + maxh)
+    global LAST
+    mae = 0
     for j in range(i, end):
         _, o, h, l, c = k[j]
         if h >= stop:
             x = max(o, stop) if j > i else stop
+            LAST = dict(r=(e - x) / e - 2 * COST, mae=h / e - 1, t0=k[i][0], t1=k[j][0])
             return ((e - x) / e - 2 * COST) / sd, 'stop'
+        mae = max(mae, h / e - 1)
         if tpp and l <= tpp:
             x = min(o, tpp) if j > i else tpp
+            LAST = dict(r=(e - x) / e - 2 * COST, mae=mae, t0=k[i][0], t1=k[j][0])
             return ((e - x) / e - 2 * COST) / sd, 'tp'
     x = k[end - 1][4]
+    LAST = dict(r=(e - x) / e - 2 * COST, mae=mae, t0=k[i][0], t1=k[end - 1][0])
     return ((e - x) / e - 2 * COST) / sd, 'time'
 
 
@@ -83,6 +89,68 @@ def entries(k, rule):
         if rule == 'откат 25% от хая' and j >= 6 and hh > p0 * 1.1 and k[j][4] < hh * 0.75:
             return j + 1, hh * 1.02
     return None
+
+
+def leverage(data):
+    import random
+    T = []
+    for r, k in data:
+        en = entries(k, 'под открытие')
+        if not en or en[0] >= len(k):
+            continue
+        i, st = en; sd = st / k[i][1] - 1
+        if sd <= 0.01 or sd > 0.4:
+            continue
+        R, _ = sim(k, i, st, 0.25); T.append(dict(LAST, R=R, sd=sd))
+    T.sort(key=lambda x: x['t0'])
+    yrs = (T[-1]['t0'] - T[0]['t0']) / (365.25 * 24 * H); rate = len(T) / yrs
+    out = ['', f'## Плечо и высокий риск: правило «под открытие», тейк −25% ({len(T)} сделок за {yrs:.1f} лет, ≈{rate:.0f} в год)', '']
+
+    def pnl(x, mode, a, L=None):
+        if mode == 'risk':
+            return a * x['R']
+        if x['mae'] >= 0.9 / L:
+            return -a
+        return a * L * x['r']
+
+    def hist(mode, a, L=None):
+        eq, open_, peak, dd = 1.0, [], 1.0, 0
+        for x in T:
+            for o in [o for o in open_ if o[0] <= x['t0']]:
+                eq += o[1]; open_.remove(o)
+            if eq <= 0.02:
+                return 0, 1
+            peak = max(peak, eq); dd = max(dd, 1 - eq / peak)
+            open_.append((x['t1'], eq * pnl(x, mode, a, L)))
+        for o in open_:
+            eq += o[1]
+        return max(eq, 0), max(dd, 1 - max(eq, 0) / max(peak, eq))
+
+    def mc(mode, a, L=None, months=6, n=20000):
+        random.seed(7); res = []
+        for _ in range(n):
+            eq = 600.0; m = sum(random.random() < rate * months / 12 / 1000 for _ in range(1000))
+            for _ in range(m):
+                eq += eq * pnl(random.choice(T), mode, a, L)
+                if eq < 12:
+                    eq = 0; break
+            res.append(eq)
+        res.sort()
+        q = lambda p: res[int(p * (n - 1))]
+        return (f"${q(.1):,.0f} | ${q(.5):,.0f} | ${q(.9):,.0f} | {100 * sum(v == 0 or v < 60 for v in res) / n:.0f}% | "
+                f"{100 * sum(v >= 5000 for v in res) / n:.1f}% | {100 * sum(v >= 30000 for v in res) / n:.2f}%")
+    liq = lambda L: 100 * sum(x['mae'] >= 0.9 / L for x in T) / len(T)
+    out += ['Модель: риск на сделку = % депозита, теряемый при стопе (стоп над хаем, медиана ~19%). '
+            '«Маржа × плечо» = вход частью депо с плечом, ликвидация при движении против на 90% от 1/плечо.',
+            '', '| вариант | история: капитал ×, макс. просадка | $600 за 6 мес: 10% худших | медиана | 10% лучших | слив (<$60) | ≥$5k | ≥$30k |',
+            '|---|---|---|---|---|---|---|---|']
+    for a in (0.01, 0.02, 0.05, 0.1, 0.15, 0.2, 0.3):
+        e, d = hist('risk', a)
+        out.append(f'| риск {int(a * 100)}% на сделку | ×{e:,.2f}, {d * 100:.0f}% | ' + mc('risk', a) + ' |')
+    for a, L in ((0.2, 3), (0.2, 5), (0.2, 10), (0.2, 20), (0.2, 50), (0.1, 20), (0.2, 75)):
+        e, d = hist('lev', a, L)
+        out.append(f'| маржа {int(a * 100)}% × {L}x (ликвидаций {liq(L):.0f}%) | ×{e:,.2f}, {d * 100:.0f}% | ' + mc('lev', a, L) + ' |')
+    return out
 
 
 def main():
@@ -129,6 +197,7 @@ def main():
                            f"{round(100 * sum(x > 0 for x in R) / len(R))}% | {w / l if l else 99:.2f} | {sum(R) / len(R):+.2f} | "
                            f"{sum(R):+.1f} | {sum(sorted(R)[:-5]):+.1f} | {sum(v > 0 for v in yrs.values())}/{len(yrs)} | "
                            f"{pct(sds, .5) * 100:.0f}% | {lev * 100:.0f}% депо |")
+    out += leverage(data)
     open(f'{CACHE}/REPORT.md', 'w').write('\n'.join(out) + '\n')
     print('\n'.join(out))
 
