@@ -1,0 +1,27 @@
+name: cascade
+on:
+  workflow_dispatch:
+  push:
+    branches: ['mme/label-study']
+    paths: ['p2/cascade.py', '.github/workflows/aggressive.yml']
+jobs:
+  oos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy pandas
+      - uses: actions/cache@v4
+        with:
+          path: mme_data
+          key: mme-1h-oicontracts-funding-24sym-2021-10-2026-10-v2
+      - uses: actions/cache@v4
+        with:
+          path: oos_data
+          key: oos-1h-30sym-2021-10-2026-10-v1
+      - run: |
+          if [ ! -f oos_data/receipt.csv ]; then python -u mme/fetch.py --out oos_data --symbols XLMUSDT,EOSUSDT,ALGOUSDT,SANDUSDT,MANAUSDT,AXSUSDT,CRVUSDT,SNXUSDT,MKRUSDT,COMPUSDT,GRTUSDT,ICPUSDT,EGLDUSDT,HBARUSDT,VETUSDT,THETAUSDT,RUNEUSDT,DYDXUSDT,GALAUSDT,CHZUSDT,KAVAUSDT,1INCHUSDT,IMXUSDT,LDOUSDT,STXUSDT,FETUSDT,WLDUSDT,SEIUSDT,TIAUSDT,ORDIUSDT; fi
+      - run: python -u p2/cascade.py mme_data oos_data
+      - run: cat p2_out/CASCADE.md >> "$GITHUB_STEP_SUMMARY"
