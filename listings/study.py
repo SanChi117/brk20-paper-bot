@@ -67,6 +67,22 @@ def meta(syms):
             m['cg_meme'] += [c['symbol'].upper() for c in js]
     except Exception as e:
         print('coingecko fail', e)
+    m['tradfi'], m['src'] = [], 'none'
+    for u in ('https://fapi.binance.com/fapi/v1/exchangeInfo', 'https://www.binance.com/fapi/v1/exchangeInfo'):
+        try:
+            js = json.load(urllib.request.urlopen(urllib.request.Request(u, headers={'User-Agent': 'Mozilla/5.0'}), timeout=60))
+            m['tradfi'] = [x['symbol'] for x in js['symbols'] if x.get('underlyingType', 'COIN') != 'COIN'
+                           or any('tradfi' in str(t).lower() or 'stock' in str(t).lower() for t in x.get('underlyingSubType', []))]
+            m['src'] = u; break
+        except Exception as e:
+            print('exchangeInfo fail', u, e)
+    if m['src'] == 'none':
+        try:
+            req = urllib.request.Request('https://api.coingecko.com/api/v3/coins/list', headers={'User-Agent': 'Mozilla/5.0'})
+            m['cg_syms'] = sorted({c['symbol'].upper() for c in json.load(urllib.request.urlopen(req, timeout=60))})
+            m['src'] = 'coingecko'
+        except Exception as e:
+            print('coins/list fail', e)
     json.dump(m, open(p, 'w'))
     return m
 
@@ -134,6 +150,14 @@ def main():
         L.append((s, k, fr))
     print('listings', len(L))
     M = meta([s for s, _, _ in L])
+    cg = set(M.get('cg_syms', []))
+    def tradfi(s, k):
+        if s in M['tradfi']:
+            return True
+        return (M['src'] == 'coingecko' and s not in M['spot0'] and ts(k[0][0]).year >= 2025 and base(s) not in cg)
+    drop = [s for s, k, _ in L if tradfi(s, k)]
+    print('tradfi source', M['src'], 'excluded', len(drop), drop[:80])
+    L = [x for x in L if x[0] not in drop]
     meme = MEMES | set(M['cg_meme'])
     feats = {}
     for s, k, fr in L:
