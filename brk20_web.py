@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# BRK-20 WEB TERMINAL v3 — браузерный терминал для бумажного бота (лейаут биржи)
+# BRK-20 WEB TERMINAL v4 — браузерный терминал для бумажного бота (лейаут биржи)
 # Графики (15м/30м/1ч/4ч/1д), рисование и заметки на графике, журнал сделок,
 # управление (пауза/закрыть/отменить/риск/equity), ручные заявки (заглушка),
 # слоты стратегий (state изолирован per-стратегия), котировки пула 24ч,
@@ -30,15 +30,39 @@ LIVE = {
               'journal': os.path.join(DIR, 'journal_slot2.log'),
               'control': os.path.join(DIR, 'control_slot2.json'),
               'side': 'short', 'eq0': 1000.0},
+    'slot3': {'state': os.path.join(DIR, 'state_slot3.json'),
+              'journal': os.path.join(DIR, 'journal_slot3.log'),
+              'control': os.path.join(DIR, 'control_slot3.json'),
+              'side': 'both', 'eq0': 1000.0},
+    'slot4': {'state': os.path.join(DIR, 'state_slot4.json'),
+              'journal': os.path.join(DIR, 'journal_slot4.log'),
+              'control': os.path.join(DIR, 'control_slot4.json'),
+              'side': 'short', 'eq0': 1000.0},
 }
 
 BASE = 'https://fapi.binance.com'
 BYBIT = 'https://api.bybit.com'
 SYMS = ['SOLUSDT','BNBUSDT','XRPUSDT','ADAUSDT','AVAXUSDT','SUIUSDT','APTUSDT','NEARUSDT',
         'LINKUSDT','AAVEUSDT','ARBUSDT','OPUSDT','DOGEUSDT','TAOUSDT','ONDOUSDT','INJUSDT','SEIUSDT']
+# пул V1.2 (слот 3): 24 монеты разработки + 30 монет независимой проверки бэктеста
+POOL54 = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT',
+          'DOTUSDT', 'LTCUSDT', 'BCHUSDT', 'NEARUSDT', 'ATOMUSDT', 'FILUSDT', 'ETCUSDT', 'TRXUSDT', 'UNIUSDT',
+          'AAVEUSDT', 'APTUSDT', 'ARBUSDT', 'OPUSDT', 'INJUSDT', 'SUIUSDT',
+          'XLMUSDT', 'EOSUSDT', 'ALGOUSDT', 'SANDUSDT', 'MANAUSDT', 'AXSUSDT', 'CRVUSDT', 'SNXUSDT', 'MKRUSDT',
+          'COMPUSDT', 'GRTUSDT', 'ICPUSDT', 'EGLDUSDT', 'HBARUSDT', 'VETUSDT', 'THETAUSDT', 'RUNEUSDT', 'DYDXUSDT',
+          'GALAUSDT', 'CHZUSDT', 'KAVAUSDT', '1INCHUSDT', 'IMXUSDT', 'LDOUSDT', 'STXUSDT', 'FETUSDT', 'WLDUSDT',
+          'SEIUSDT', 'TIAUSDT', 'ORDIUSDT']
 TFS = {'15m': ('15m', '15', 900000), '30m': ('30m', '30', 1800000),
        '1h': ('1h', '60', 3600000), '4h': ('4h', '240', 4*3600000),
        '1d': ('1d', 'D', 86400000)}
+
+# эталон бэктеста для панели «факт против бэктеста» (n, WR %, PF, средний R; None — не считалось)
+BT_REF = {
+    'brk20': {'n': 191, 'wr': None, 'pf': 1.723, 'avg_r': None, 'src': 'bt_candidates19.py, 2021–2025'},
+    'slot2': {'n': 117, 'wr': None, 'pf': 1.834, 'avg_r': None, 'src': 'bt_short1.py, 2021–2025'},
+    'slot3': {'n': 2918, 'wr': 26.0, 'pf': 1.37, 'avg_r': 0.38, 'src': '54 монеты, 2022 – май 2026; июнь–окт 2026: PF 2.89'},
+    'slot4': {'n': 301, 'wr': 56.0, 'pf': 1.48, 'avg_r': 0.21, 'src': 'все листинги USDT-M 2020 – май 2026'},
+}
 
 STRATEGIES = [
     {'id': 'brk20', 'name': 'BRK-20', 'kind': 'Пробой 20-дневного хая (4h)',
@@ -47,11 +71,35 @@ STRATEGIES = [
     {'id': 'slot2', 'name': 'BRK-20 SHORT', 'kind': 'Пробой 20-дневного лоу (4h), шорт',
      'status': 'forward-gate', 'risk': '1%', 'pool': len(SYMS),
      'desc': 'Зеркало BRK-20: пробой Donchian-120 вниз, sell-stop, стоп +1.75×ATR, BE на +2R, трейл по пивот-хаям. Бэктест: 117 сделок, PF 1.834, стресс 1.785. Свой счёт, свой гейт: 30 сделок, PF>1.2.'},
-    {'id': 'slot3', 'name': 'Слот 3', 'kind': '—', 'status': 'empty', 'risk': '—', 'pool': 0,
-     'desc': 'Пустой слот под третью стратегию.'},
-    {'id': 'slot4', 'name': 'Слот 4', 'kind': '—', 'status': 'empty', 'risk': '—', 'pool': 0,
-     'desc': 'Пустой слот под четвёртую стратегию.'},
+    {'id': 'slot3', 'name': 'V1.2 ПРОБОЙ', 'kind': 'Сильный пробой после сжатия (1h), лонг и шорт',
+     'status': 'forward-gate', 'risk': '1%', 'pool': len(POOL54),
+     'desc': 'Сжатие Боллинджера → пробой 36-часового диапазона с баллом силы ≥5/6 → вход по рынку, стоп за уровнем −0.5 ATR, '
+             'добор на +1R, выход за EMA20 или через 72 ч. До 8 позиций. Бот сверен с бэктестом: 3199 из 3199 сделок совпали.'},
+    {'id': 'slot4', 'name': 'ЛИСТИНГИ', 'kind': 'Шорт новых фьючерсов Binance после слома пампа',
+     'status': 'forward-gate', 'risk': '5%', 'pool': 0,
+     'desc': 'Новый листинг: памп ≥ +5% к первой цене, затем час закрылся ниже неё → шорт. Стоп над хаем +2%, тейк −25%, '
+             'максимум 14 дней. Только крипто-контракты, акции и TradFi исключены.'},
 ]
+
+def pool_of(strat):
+    if strat in ('brk20', 'slot2'):
+        return list(SYMS)
+    if strat == 'slot3':
+        st = load_state(LIVE['slot3']['state']) or {}
+        return st.get('pool') or list(POOL54)
+    if strat == 'slot4':
+        st = load_state(LIVE['slot4']['state']) or {}
+        syms = [p['sym'] for p in st.get('positions', [])] + [p['sym'] for p in st.get('pendings', [])]
+        syms += [t['sym'] for t in st.get('trades', [])[-20:]]
+        return list(dict.fromkeys(syms))
+    return list(SYMS)
+
+def allowed_syms():
+    out = set(SYMS) | set(POOL54)
+    for k in ('slot4',):
+        out |= set(pool_of(k))
+    out |= {p['sym'] for p in manual_book().get('positions', [])}
+    return out
 
 EMPTY_STATE = {'eq': 0.0, 'positions': [], 'pendings': [], 'trades': [],
                'n': 0, 'pf': None, 'wr': 0.0, 'gate': '—', 'paused': False,
@@ -105,7 +153,7 @@ def _fetch_klines(sym, tf, limit=300):
         if r.status_code == 200:
             # БЕЗ фильтра "x[0]+ms<=now": последняя (формирующаяся) свеча нужна графику —
             # иначе цена на 1h/4h «замораживается» на закрытии прошлого бара.
-            return [(int(x[0]), float(x[1]), float(x[2]), float(x[3]), float(x[4])) for x in r.json()]
+            return [(int(x[0]), float(x[1]), float(x[2]), float(x[3]), float(x[4]), float(x[7])) for x in r.json()]
         raise RuntimeError(f'HTTP {r.status_code}')
     except Exception:
         pass
@@ -115,11 +163,57 @@ def _fetch_klines(sym, tf, limit=300):
                                  'limit': min(limit, 1000)}, timeout=6)
         j = r.json()
         if j.get('retCode') == 0:
-            return [(int(x[0]), float(x[1]), float(x[2]), float(x[3]), float(x[4]))
+            return [(int(x[0]), float(x[1]), float(x[2]), float(x[3]), float(x[4]), float(x[6]))
                     for x in reversed(j['result']['list'])]
     except Exception:
         pass
     return []
+
+def ema_list(x, n=20):
+    a = 2 / (n + 1); out = []
+    for v in x:
+        out.append(v if not out else a * v + (1 - a) * out[-1])
+    return out
+
+def indicator_lines(sym, strat, both=False):
+    """Линии стратегии на графике: [{name, color, width, step, pts:[[t_sec, v], ...]}]."""
+    if strat in ('brk20', 'slot2'):
+        d = donchian(sym, LIVE[strat]['side'], True)
+        if not d.get('hi20'):
+            return {'lines': [], 'info': ''}
+        mine = 'LO20' if strat == 'slot2' else 'HI20'
+        lines = []
+        for name, pts, col in (('HI20', d['hi20'], '#f0b90b'), ('LO20', d['lo20'], '#5b8cff')):
+            if both or name == mine:
+                lines.append({'name': name, 'color': col, 'width': 2 if name == mine else 1, 'step': True, 'pts': pts})
+        info = ' · '.join(f"{l['name']} {l['pts'][-1][1]:.6g}" for l in lines) + (f" · ATR(4h) {d['atr']:.6g}" if d.get('atr') else '')
+        return {'lines': lines, 'info': info}
+    if strat == 'slot3':
+        rows = klines(sym, '1h', 500)
+        if len(rows) < 60:
+            return {'lines': [], 'info': ''}
+        closes = [r[4] for r in rows]; em = ema_list(closes)
+        hi = [[rows[i][0] // 1000, max(r[2] for r in rows[i - 36:i])] for i in range(36, len(rows))]
+        lo = [[rows[i][0] // 1000, min(r[3] for r in rows[i - 36:i])] for i in range(36, len(rows))]
+        lines = [{'name': 'EMA20', 'color': '#8a5cff', 'width': 2, 'step': False,
+                  'pts': [[rows[i][0] // 1000, em[i]] for i in range(20, len(rows))]}]
+        lines += [{'name': 'Хай 36ч', 'color': '#0ecb81', 'width': 1, 'step': True, 'pts': hi},
+                      {'name': 'Лоу 36ч', 'color': '#f6465d', 'width': 1, 'step': True, 'pts': lo}]
+        return {'lines': lines, 'info': f"EMA20(1h) {em[-1]:.6g} · диапазон 36ч {lo[-1][1]:.6g} – {hi[-1][1]:.6g}"}
+    if strat == 'slot4':
+        st = load_state(LIVE['slot4']['state']) or {}
+        x = (st.get('watch') or {}).get(sym)
+        if not x:
+            return {'lines': [], 'info': ''}
+        rows = klines(sym, '1h', 500)
+        rows = [r for r in rows if r[0] >= x['onboard'] // 3600000 * 3600000]
+        if not rows:
+            return {'lines': [], 'info': ''}
+        p0 = rows[0][1]; t0 = rows[0][0] // 1000; t1 = rows[-1][0] // 1000
+        return {'lines': [{'name': 'P0', 'color': '#f0b90b', 'width': 2, 'step': True, 'pts': [[t0, p0], [t1, p0]]},
+                          {'name': '+5%', 'color': '#5b8cff', 'width': 1, 'step': True, 'pts': [[t0, p0 * 1.05], [t1, p0 * 1.05]]}],
+                'info': f'P0 (первая цена) {p0:.6g} · вход — закрытие часа ниже P0 после пампа ≥ +5%'}
+    return {'lines': [], 'info': ''}
 
 def donchian(sym, side='long', both=False):
     """Индикатор стратегии: граница Donchian-120 на 4h (20 дней) + ATR(14) Wilder.
@@ -128,7 +222,7 @@ def donchian(sym, side='long', both=False):
     both=True: обе границы канала сразу (hi20 + lo20) для визуального сравнения."""
     rows = klines(sym, '4h', 300)
     if len(rows) < 130:
-        return {'pts': [], 'atr': None, 'line': 'HI20' if side == 'long' else 'LO20'}
+        return {'pts': [], 'hi20': [], 'lo20': [], 'atr': None, 'line': 'HI20' if side == 'long' else 'LO20'}
     highs = [r[2] for r in rows]
     lows = [r[3] for r in rows]
     hi20 = [[rows[i][0] // 1000, max(highs[i-120:i])] for i in range(120, len(rows))]
@@ -201,52 +295,77 @@ def trigger_levels():
         _TRG_CACHE['data'] = data
     return _TRG_CACHE['data']
 
-def quotes():
-    """Котировки пула: последняя цена, % за 24ч, OHLC 24ч и оборот — для сайдбара
-    и стат-полосы над графиком. Кэш 5с: фронт опрашивает часто, биржу не дёргаем."""
-    if time.time() - _Q_CACHE['ts'] < 5 and _Q_CACHE['rows']:
-        return _Q_CACHE['rows']
-    rows = []
+_ALLQ = {'ts': 0.0, 'rows': {}}
+_CH36 = {'ts': 0.0, 'data': {}}
+
+def all_tickers():
+    """Все тикеры фьючерсов за один запрос (кэш 5с): котировки любого пула без лишних вызовов."""
+    if time.time() - _ALLQ['ts'] < 5 and _ALLQ['rows']:
+        return _ALLQ['rows']
+    rows = {}
     try:
-        r = requests.get(f'{BASE}/fapi/v1/ticker/24hr',
-                         params={'symbols': json.dumps(SYMS)}, timeout=6)
+        r = requests.get(f'{BASE}/fapi/v1/ticker/24hr', timeout=8)
         if r.status_code == 200:
             for x in r.json():
-                rows.append({'sym': x['symbol'], 'px': float(x['lastPrice']),
-                             'chg': float(x['priceChangePercent']),
-                             'o': float(x['openPrice']), 'h': float(x['highPrice']),
-                             'l': float(x['lowPrice']), 'vol': float(x['quoteVolume']),
-                             'src': 'binance'})
+                rows[x['symbol']] = {'sym': x['symbol'], 'px': float(x['lastPrice']),
+                                     'chg': float(x['priceChangePercent']), 'o': float(x['openPrice']),
+                                     'h': float(x['highPrice']), 'l': float(x['lowPrice']),
+                                     'vol': float(x['quoteVolume']), 'src': 'binance'}
     except Exception:
         pass
     if not rows:
         try:
-            r = requests.get(f'{BYBIT}/v5/market/tickers',
-                             params={'category': 'linear'}, timeout=8)
+            r = requests.get(f'{BYBIT}/v5/market/tickers', params={'category': 'linear'}, timeout=8)
             j = r.json()
             if j.get('retCode') == 0:
                 for x in j['result']['list']:
-                    if x['symbol'] in SYMS:
-                        rows.append({'sym': x['symbol'], 'px': float(x['lastPrice']),
-                                     'chg': float(x.get('price24hPcnt') or 0) * 100,
-                                     'o': float(x.get('prevPrice24h') or 0),
-                                     'h': float(x['highPrice24h']),
-                                     'l': float(x['lowPrice24h']),
-                                     'vol': float(x['turnover24h']), 'src': 'bybit'})
+                    rows[x['symbol']] = {'sym': x['symbol'], 'px': float(x['lastPrice']),
+                                         'chg': float(x.get('price24hPcnt') or 0) * 100,
+                                         'o': float(x.get('prevPrice24h') or 0), 'h': float(x['highPrice24h']),
+                                         'l': float(x['lowPrice24h']), 'vol': float(x['turnover24h']), 'src': 'bybit'}
         except Exception:
             pass
     if rows:
-        rows.sort(key=lambda x: SYMS.index(x['sym']) if x['sym'] in SYMS else 99)
-        # дистанция до границ канала, %: d_hi > 0 (граница сверху), d_lo < 0 (снизу)
-        trg = trigger_levels()
-        for r in rows:
-            if r['sym'] in trg and r['px']:
-                hi, lo = trg[r['sym']]
-                r['d_hi'] = round((hi / r['px'] - 1) * 100, 2)
-                r['d_lo'] = round((lo / r['px'] - 1) * 100, 2)
-        _Q_CACHE['ts'] = time.time()
-        _Q_CACHE['rows'] = rows
-    return _Q_CACHE['rows']
+        _ALLQ['ts'] = time.time(); _ALLQ['rows'] = rows
+    return _ALLQ['rows']
+
+def channel36():
+    """Диапазон 36 закрытых часов по пулу V1.2 — дистанция до пробоя в сайдбаре (кэш 10 мин)."""
+    if time.time() - _CH36['ts'] < 600 and _CH36['data']:
+        return _CH36['data']
+    data = {}
+    for sym in pool_of('slot3'):
+        rows = klines(sym, '1h', 40)
+        closed = rows[:-1] if rows and rows[-1][0] + 3600000 > int(time.time() * 1000) else rows
+        if len(closed) >= 36:
+            data[sym] = (max(r[2] for r in closed[-36:]), min(r[3] for r in closed[-36:]))
+    if data:
+        _CH36['ts'] = time.time(); _CH36['data'] = data
+    return _CH36['data']
+
+def quotes(strat='brk20'):
+    """Котировки пула стратегии: цена, % за 24ч, OHLC 24ч, оборот + дистанция до уровней входа."""
+    allq = all_tickers()
+    pool = pool_of(strat)
+    rows = [dict(allq[s]) for s in pool if s in allq]
+    if strat in ('brk20', 'slot2'):
+        lv, names = trigger_levels(), ('HI20', 'LO20')
+    elif strat == 'slot3':
+        lv, names = channel36(), ('хай 36ч', 'лоу 36ч')
+    else:
+        st = load_state(LIVE['slot4']['state']) or {}
+        lv = {p['sym']: (p['stop'], p['entry']) for p in st.get('pendings', [])}
+        names = ('стоп', 'P0')
+    for r in rows:
+        if r['sym'] in lv and r['px']:
+            hi, lo = lv[r['sym']]
+            r['d_hi'] = round((hi / r['px'] - 1) * 100, 2)
+            r['d_lo'] = round((lo / r['px'] - 1) * 100, 2)
+            r['lv'] = names
+    return rows
+
+def _px_map():
+    return {k: v['px'] for k, v in all_tickers().items() if v.get('px')}
 
 def trades_tape(sym, limit=30):
     """Лента последних сделок по монете: цена, кол-во, время, сторона
@@ -278,10 +397,6 @@ def trades_tape(sym, limit=30):
 # Позиции/заявки, открытые руками из панели терминала. Своя книга (manual.json),
 # к сделкам ботов не смешивается — но в интерфейсе показывается рядом.
 MANUAL_EMPTY = {'positions': [], 'pendings': [], 'trades': [], 'seq': 1}
-
-def _px_map():
-    """Текущие цены пула из кэша котировок (сети не дёргаем лишний раз)."""
-    return {r['sym']: r['px'] for r in quotes() if r.get('px')}
 
 def manual_book():
     return load_json(MANUAL_F, dict(MANUAL_EMPTY))
@@ -394,9 +509,31 @@ def manual_view():
     return {'positions': pos, 'pendings': b['pendings'], 'trades': trades,
             'n': len(b['trades']), 'pnl': pnl_sum}
 
+def parity(strat, trs):
+    """Факт против бэктеста: те же метрики по закрытым сделкам бота (ручные закрытия не считаются)."""
+    ref = BT_REF.get(strat, {})
+    t = [x for x in trs if x.get('out') != 'manual']
+    n = len(t)
+    rs = [x.get('r', 0.0) for x in t]
+    gw = sum(x['r_usd'] for x in t if x['r_usd'] > 0); gl = -sum(x['r_usd'] for x in t if x['r_usd'] < 0)
+    live = {'n': n, 'wr': round(100 * sum(1 for x in t if x['r_usd'] > 0) / n, 1) if n else None,
+            'pf': round(gw / gl, 2) if gl > 0 else None, 'avg_r': round(sum(rs) / n, 3) if n else None,
+            'sum_r': round(sum(rs), 2)}
+    if n < 20:
+        verdict, level = f'мало сделок для вывода ({n}/20)', 'wait'
+    elif live['pf'] is not None and ref.get('pf') and live['pf'] >= 0.8 * ref['pf']:
+        verdict, level = 'в пределах бэктеста', 'ok'
+    elif live['pf'] is not None and live['pf'] >= 1.0:
+        verdict, level = 'в плюсе, но хуже бэктеста — наблюдать', 'warn'
+    else:
+        verdict, level = 'хуже бэктеста — кандидат на остановку', 'bad'
+    return {'ref': ref, 'live': live, 'verdict': verdict, 'level': level}
+
 def api_state(strat='brk20'):
     ts = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
-    base = {'strategies': STRATEGIES, 'syms': SYMS, 'strat': strat, 'ts': ts}
+    base = {'strategies': STRATEGIES, 'syms': pool_of(strat), 'strat': strat, 'ts': ts,
+            'pool': pool_of(strat), 'pool_missing': (load_state(LIVE[strat]['state']) or {}).get('pool_missing', [])
+            if strat in LIVE else [], 'parity': parity(strat, [])}
     if strat not in LIVE:
         # пустой слот: свой «нулевой» стейт, ничего общего с живыми стратегиями
         out = dict(EMPTY_STATE); out.update(base); out['live'] = False
@@ -407,7 +544,7 @@ def api_state(strat='brk20'):
     if st is None:
         # бот ещё не создал state (не запущен) — показываем свежий нулевой гейт
         out = dict(EMPTY_STATE); out.update(base)
-        out.update({'eq': cfg['eq0'], 'gate': 'ИДЁТ', 'live': True, 'side': cfg['side']})
+        out.update({'eq': cfg['eq0'], 'gate': 'ИДЁТ', 'live': True, 'side': cfg['side'], 'not_started': True})
         out['manual'] = manual_view()
         return out
     trs = st.get('trades', [])
@@ -439,7 +576,24 @@ def api_state(strat='brk20'):
            'started': st.get('started'),
            'live': True, 'side': cfg['side']}
     out.update(base)
+    out['parity'] = parity(strat, trs)
+    if strat == 'slot4':
+        out['watch'] = {k: {kk: vv for kk, vv in v.items() if kk in ('onboard', 'state', 'why')}
+                        for k, v in (st.get('watch') or {}).items()}
     out['manual'] = manual_view()
+    return out
+
+def overview():
+    """Короткая сводка по всем слотам — для переключателя стратегий в шапке."""
+    out = {}
+    for k, cfg in LIVE.items():
+        st = load_state(cfg['state'])
+        if st is None:
+            out[k] = {'live': False, 'eq': cfg['eq0'], 'n': 0, 'pos': 0}
+            continue
+        trs = [t for t in st.get('trades', []) if t.get('out') != 'manual']
+        out[k] = {'live': True, 'eq': round(st.get('eq', cfg['eq0']), 2), 'eq0': cfg['eq0'], 'n': len(trs),
+                  'pos': len(st.get('positions', [])), 'paused': st.get('paused', False)}
     return out
 
 def queue_control(body):
@@ -471,7 +625,7 @@ def trades_csv(strat='brk20'):
         st = load_state(LIVE[strat]['state']) or {}
         side = LIVE[strat]['side']
         for t in st.get('trades', []):
-            w.writerow([strat, t.get('id'), t.get('sym'), side, t.get('entry'), t.get('exit'),
+            w.writerow([strat, t.get('id'), t.get('sym'), t.get('side', side), t.get('entry'), t.get('exit'),
                         fmt_t(t.get('entry_t')), fmt_t(t.get('exit_t')),
                         t.get('r'), t.get('r_usd'), t.get('out'), ''])
     for t in manual_book().get('trades', []):
@@ -503,6 +657,17 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
+        if u.path == '/favicon.ico':
+            self._send(204, b'', 'image/x-icon'); return
+        if u.path == '/static/lwc.js':          # библиотека графиков — своя копия, без внешнего CDN
+            with open(os.path.join(DIR, 'web', 'lwc.js'), 'rb') as f:
+                b = f.read()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/javascript')
+            self.send_header('Content-Length', str(len(b)))
+            self.send_header('Cache-Control', 'public, max-age=86400')
+            self.end_headers(); self.wfile.write(b)
+            return
         if not self._ok(q):
             self._send(403, json.dumps({'error': 'bad token'}))
             return
@@ -513,44 +678,45 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps(api_state(q.get('strat', ['brk20'])[0]), ensure_ascii=False))
         elif u.path == '/api/klines':
             sym = q.get('symbol', ['SOLUSDT'])[0]
-            if sym not in SYMS:
+            if sym not in allowed_syms():
                 self._send(400, json.dumps({'error': 'bad symbol'})); return
             tf = q.get('tf', ['1h'])[0]
             if tf not in TFS:
                 tf = '1h'
             rows = klines(sym, tf, 500)
             self._send(200, json.dumps({'symbol': sym, 'tf': tf,
-                                        'candles': [{'t': t//1000, 'o': o, 'h': h, 'l': l, 'c': c}
-                                                    for t, o, h, l, c in rows]}))
+                                        'candles': [{'t': r[0]//1000, 'o': r[1], 'h': r[2], 'l': r[3], 'c': r[4],
+                                                     'v': r[5] if len(r) > 5 else 0} for r in rows]}))
         elif u.path == '/api/drawings':
             sym = q.get('symbol', [''])[0]
             d = load_json(DRAW_F, {})
             self._send(200, json.dumps({'symbol': sym, 'items': d.get(sym, [])}, ensure_ascii=False))
         elif u.path == '/api/depth':
             sym = q.get('symbol', ['SOLUSDT'])[0]
-            if sym not in SYMS:
+            if sym not in allowed_syms():
                 self._send(400, json.dumps({'error': 'bad symbol'})); return
             d = depth(sym)
             d['symbol'] = sym
             self._send(200, json.dumps(d))
         elif u.path == '/api/quotes':
-            self._send(200, json.dumps({'rows': quotes()}))
+            self._send(200, json.dumps({'rows': quotes(q.get('strat', ['brk20'])[0])}))
+        elif u.path == '/api/overview':
+            self._send(200, json.dumps(overview()))
         elif u.path == '/api/trades_csv':
             strat = q.get('strat', ['brk20'])[0]
             self._send(200, trades_csv(strat), 'text/csv; charset=utf-8')
         elif u.path == '/api/trades':
             sym = q.get('symbol', ['SOLUSDT'])[0]
-            if sym not in SYMS:
+            if sym not in allowed_syms():
                 self._send(400, json.dumps({'error': 'bad symbol'})); return
             self._send(200, json.dumps(trades_tape(sym)))
         elif u.path == '/api/indicator':
             sym = q.get('symbol', ['SOLUSDT'])[0]
-            if sym not in SYMS:
+            if sym not in allowed_syms():
                 self._send(400, json.dumps({'error': 'bad symbol'})); return
             strat = q.get('strat', ['brk20'])[0]
-            side = LIVE.get(strat, {}).get('side', 'long')
             both = q.get('both', ['0'])[0] == '1'
-            d = donchian(sym, side, both)
+            d = indicator_lines(sym, strat, both)
             d['symbol'] = sym
             self._send(200, json.dumps(d))
         else:
@@ -572,7 +738,7 @@ class Handler(BaseHTTPRequestHandler):
             cmd = body.get('cmd')
             # ручные команды исполняет сам веб-сервер (своя книга manual.json)
             if cmd == 'manual_order':
-                if body.get('sym') not in SYMS:
+                if body.get('sym') not in allowed_syms():
                     self._send(400, json.dumps({'error': 'bad symbol'})); return
                 if body.get('otype') not in ('market', 'limit', 'stop'):
                     body['otype'] = 'market'
@@ -593,7 +759,7 @@ class Handler(BaseHTTPRequestHandler):
                        'close_all', 'cancel_all')
             if cmd not in allowed:
                 self._send(400, json.dumps({'error': 'bad cmd'})); return
-            if cmd in ('close', 'cancel') and body.get('sym') not in SYMS:
+            if cmd in ('close', 'cancel') and body.get('sym') not in allowed_syms():
                 self._send(400, json.dumps({'error': 'bad symbol'})); return
             if not queue_control(body):
                 self._send(400, json.dumps({'error': 'слот пуст — некому исполнять команду'})); return
@@ -601,7 +767,7 @@ class Handler(BaseHTTPRequestHandler):
 
         elif u.path == '/api/drawings':
             sym = body.get('symbol')
-            if sym not in SYMS:
+            if sym not in allowed_syms():
                 self._send(400, json.dumps({'error': 'bad symbol'})); return
             d = load_json(DRAW_F, {})
             items = d.get(sym, [])
@@ -649,7 +815,7 @@ def main():
     # BRK20_WEB_HOST=127.0.0.1 — доступ только через SSH-туннель или HTTPS-прокси (рекомендуется)
     host = os.environ.get('BRK20_WEB_HOST', '0.0.0.0')
     srv = ThreadingHTTPServer((host, port), Handler)
-    print(f'BRK-20 WEB TERMINAL v3 на порту {port}', flush=True)
+    print(f'BRK-20 WEB TERMINAL v4 на порту {port}', flush=True)
     print(f'URL для браузера: http://<IP-сервера>:{port}/?key={conf["token"]}', flush=True)
     srv.serve_forever()
 
