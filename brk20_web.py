@@ -702,6 +702,25 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps({'rows': quotes(q.get('strat', ['brk20'])[0])}))
         elif u.path == '/api/overview':
             self._send(200, json.dumps(overview()))
+        elif u.path == '/api/tgexports':
+            d = os.path.join(DIR, 'tg_exports')
+            files = sorted(os.listdir(d)) if os.path.isdir(d) else []
+            self._send(200, json.dumps({'files': [{'name': f, 'size': os.path.getsize(os.path.join(d, f)),
+                                                   'mtime': int(os.path.getmtime(os.path.join(d, f)) * 1000)}
+                                                  for f in files if f.endswith('.json')]}))
+        elif u.path == '/api/tgexport':
+            f = os.path.basename(q.get('f', [''])[0])
+            fp = os.path.join(DIR, 'tg_exports', f)
+            if not f.endswith('.json') or not os.path.isfile(fp):
+                self._send(404, json.dumps({'error': 'нет файла'})); return
+            with open(fp, 'rb') as fh:
+                b = fh.read()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Disposition', f'attachment; filename="{f}"')
+            self.send_header('Content-Length', str(len(b)))
+            self.end_headers(); self.wfile.write(b)
+            return
         elif u.path == '/api/trades_csv':
             strat = q.get('strat', ['brk20'])[0]
             self._send(200, trades_csv(strat), 'text/csv; charset=utf-8')

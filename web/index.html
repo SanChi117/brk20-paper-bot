@@ -427,6 +427,11 @@
     </div>
   </div>
   <div class="card">
+    <h3>Выгрузки Telegram</h3>
+    <div class="sub">История каналов, выгруженная командой <b>bash tg.sh</b> на сервере. Скачайте файл и пришлите в чат для проверки сигналов автора.</div>
+    <div id="tgx" class="sub">—</div>
+  </div>
+  <div class="card">
     <h3>Сервис</h3>
     <div class="kv">Боты: <b>brk20 · brk20s · brk20v12 · brk20l</b></div>
     <div class="kv">Терминал: <b>brk20-web</b> · автообновление с GitHub каждые 15 мин (после тестов)</div>
@@ -507,6 +512,7 @@ document.querySelectorAll('header nav button').forEach(b => b.onclick = () => {
   b.classList.add('cur'); $(b.dataset.v).classList.add('cur');
   if (b.dataset.v === 'v-trades') renderTradebook();
   if (b.dataset.v === 'v-strat') renderStrategies();
+  if (b.dataset.v === 'v-admin') renderTgx();
   if (b.dataset.v === 'v-term') setTimeout(() => { resizeCharts(); if (wantRecenter) recenter(); }, 30);
 });
 document.querySelectorAll('#bt-tabs button').forEach(b => b.onclick = () => {
@@ -1215,6 +1221,13 @@ async function renderStrategies(){
       ${pool.length ? `<div class="pchips">${pool.map(s => `<span class="${miss.has(s) ? 'miss' : ''}" title="${miss.has(s) ? 'нет на бирже / не торгуется' : ''}">${s.replace('USDT','')}</span>`).join('')}</div>` : ''}
       <div class="foot"><button class="go" onclick="openSlot('${SLOTS[k].id}')">Открыть в терминале</button></div></div>`;
   }).join('');
+}
+async function renderTgx(){
+  let d; try { d = await api('/api/tgexports'); } catch(e) { return; }
+  $('tgx').innerHTML = (d.files || []).length
+    ? d.files.map(f => `<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0"><span>${f.name} · ${(f.size/1024).toFixed(0)} КБ · ${fmtT(f.mtime)}</span>` +
+      `<a href="/api/tgexport?f=${encodeURIComponent(f.name)}&key=${KEY}" style="color:var(--blue)">скачать</a></div>`).join('')
+    : 'Выгрузок пока нет.';
 }
 function openSlot(id){ setStrat(id); document.querySelector('header nav button[data-v="v-term"]').click(); }
 

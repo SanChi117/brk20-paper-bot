@@ -10,3 +10,5 @@ manual.json
 archive/
 update.log
 update_tests.log
+tg_private/
+tg_exports/
