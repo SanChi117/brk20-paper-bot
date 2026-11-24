@@ -38,7 +38,16 @@ LIVE = {
               'journal': os.path.join(DIR, 'journal_slot4.log'),
               'control': os.path.join(DIR, 'control_slot4.json'),
               'side': 'short', 'eq0': 1000.0},
+    'slot5': {'state': os.path.join(DIR, 'state_slot5.json'),
+              'journal': os.path.join(DIR, 'journal_slot5.log'),
+              'control': os.path.join(DIR, 'control_slot5.json'),
+              'side': 'both', 'eq0': 100.0},
+    'slot6': {'state': os.path.join(DIR, 'state_slot6.json'),
+              'journal': os.path.join(DIR, 'journal_slot6.log'),
+              'control': os.path.join(DIR, 'control_slot6.json'),
+              'side': 'both', 'eq0': 100.0},
 }
+COPY_SLOTS = ('slot5', 'slot6')
 
 BASE = 'https://fapi.binance.com'
 BYBIT = 'https://api.bybit.com'
@@ -62,6 +71,8 @@ BT_REF = {
     'slot2': {'n': 117, 'wr': None, 'pf': 1.834, 'avg_r': None, 'src': 'bt_short1.py, 2021–2025'},
     'slot3': {'n': 2918, 'wr': 26.0, 'pf': 1.37, 'avg_r': 0.38, 'src': '54 монеты, 2022 – май 2026; июнь–окт 2026: PF 2.89'},
     'slot4': {'n': 301, 'wr': 56.0, 'pf': 1.48, 'avg_r': 0.21, 'src': 'все листинги USDT-M 2020 – май 2026'},
+    'slot5': {'n': 1920, 'wr': 73.5, 'pf': 0.58, 'avg_r': -0.112, 'src': 'сигналы канала 03.2024 – 11.2026 по свечам Binance'},
+    'slot6': {'n': 1807, 'wr': 78.0, 'pf': 0.61, 'avg_r': -0.071, 'src': 'сигналы канала 03.2024 – 11.2026 по свечам Binance'},
 }
 
 STRATEGIES = [
@@ -79,6 +90,15 @@ STRATEGIES = [
      'status': 'forward-gate', 'risk': '5%', 'pool': 0,
      'desc': 'Новый листинг: памп ≥ +5% к первой цене, затем час закрылся ниже неё → шорт. Стоп над хаем +2%, тейк −25%, '
              'максимум 14 дней. Только крипто-контракты, акции и TradFi исключены.'},
+    {'id': 'slot5', 'name': 'CRYPTOX ИЗОЛ', 'kind': 'Копия сигналов канала CryptoX | ProTrading, изолированная маржа',
+     'status': 'forward-gate', 'risk': '10% банка маржой', 'pool': 0,
+     'desc': 'Бот читает канал и входит по рынку в момент поста: размер как у канала («Входим на X$ / Банк Y$», иначе 10%), '
+             'плечо из поста. 50% на первом тейке и стоп в безубыток, остаток на втором, максимум 14 дней. Изолированная '
+             'маржа: если стоп канала дальше ликвидации, выход по ликвидации. Старт 100$, как марафон канала.'},
+    {'id': 'slot6', 'name': 'CRYPTOX КРОСС', 'kind': 'Те же сигналы CryptoX, кросс-маржа (ликвидации нет)',
+     'status': 'forward-gate', 'risk': '10% банка маржой', 'pool': 0,
+     'desc': 'То же, что слот 5, но кросс-маржа: позицию держит весь счёт, работает стоп канала; сигналы без стопа держатся '
+             'до тейка или 14 дней. Старт 100$.'},
 ]
 
 def pool_of(strat):
@@ -92,11 +112,15 @@ def pool_of(strat):
         syms = [p['sym'] for p in st.get('positions', [])] + [p['sym'] for p in st.get('pendings', [])]
         syms += [t['sym'] for t in st.get('trades', [])[-20:]]
         return list(dict.fromkeys(syms))
+    if strat in COPY_SLOTS:
+        st = load_state(LIVE[strat]['state']) or {}
+        syms = [p['sym'] for p in st.get('positions', [])] + [t['sym'] for t in st.get('trades', [])[-20:]]
+        return list(dict.fromkeys(syms))
     return list(SYMS)
 
 def allowed_syms():
     out = set(SYMS) | set(POOL54)
-    for k in ('slot4',):
+    for k in ('slot4',) + COPY_SLOTS:
         out |= set(pool_of(k))
     out |= {p['sym'] for p in manual_book().get('positions', [])}
     return out
@@ -352,10 +376,12 @@ def quotes(strat='brk20'):
         lv, names = trigger_levels(), ('HI20', 'LO20')
     elif strat == 'slot3':
         lv, names = channel36(), ('хай 36ч', 'лоу 36ч')
-    else:
+    elif strat == 'slot4':
         st = load_state(LIVE['slot4']['state']) or {}
         lv = {p['sym']: (p['stop'], p['entry']) for p in st.get('pendings', [])}
         names = ('стоп', 'P0')
+    else:
+        lv, names = {}, ('', '')
     for r in rows:
         if r['sym'] in lv and r['px']:
             hi, lo = lv[r['sym']]
@@ -521,6 +547,9 @@ def parity(strat, trs):
             'sum_r': round(sum(rs), 2)}
     if n < 20:
         verdict, level = f'мало сделок для вывода ({n}/20)', 'wait'
+    elif strat in COPY_SLOTS:
+        verdict, level = (('в плюсе — лучше, чем канал показал на истории', 'ok') if (live['pf'] or 0) > 1.0
+                          else ('в минусе — как на истории канала', 'bad'))
     elif live['pf'] is not None and ref.get('pf') and live['pf'] >= 0.8 * ref['pf']:
         verdict, level = 'в пределах бэктеста', 'ok'
     elif live['pf'] is not None and live['pf'] >= 1.0:
@@ -580,6 +609,10 @@ def api_state(strat='brk20'):
     if strat == 'slot4':
         out['watch'] = {k: {kk: vv for kk, vv in v.items() if kk in ('onboard', 'state', 'why')}
                         for k, v in (st.get('watch') or {}).items()}
+    if strat in COPY_SLOTS:
+        cl = st.get('claimed') or []
+        out['copy'] = {'claimed': cl[-1][1] if cl else None, 'claimed_t': cl[-1][0] if cl else None,
+                       'claimed_first': cl[0][1] if cl else None, 'skips': (st.get('skips') or [])[-30:]}
     out['manual'] = manual_view()
     return out
 
