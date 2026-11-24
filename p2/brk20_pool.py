@@ -103,10 +103,16 @@ def main():
         tr = sorted([x for s in g for x in U[s]], key=lambda x: x['t'])
         a = RE.equity([x for x in tr if x['t'] < HOLD], RISK, 2); b = RE.equity([x for x in tr if x['t'] >= HOLD], RISK, 2)
         L.append(f'| {name} | ×{a[0]:.2f} / {a[1] * 100:.0f}% / {a[2] if len(a) > 2 else "—"} | ×{b[0]:.2f} |')
-    for mp in (3, 4):
-        tr = sorted([x for s in cur + new for x in U[s]], key=lambda x: x['t'])
-        a = RE.equity([x for x in tr if x['t'] < HOLD], RISK, mp)
-        L.append(f'| все монеты, до {mp} позиций | ×{a[0]:.2f} / {a[1] * 100:.0f}% | — |')
+    L += ['', '## Сколько позиций держать одновременно (2022 – май 2026 / июнь–окт 2026)', '',
+          '| пул | риск | до 2 | до 4 | до 6 | до 8 | до 12 |', '|---|---|---|---|---|---|---|']
+    for name, g in (('текущий пул', cur), ('все 54', cur + new)):
+        tr = sorted([x for s in g for x in U[s]], key=lambda x: x['t'])
+        for rk in (0.005, 0.01):
+            cells = []
+            for mp in (2, 4, 6, 8, 12):
+                a = RE.equity([x for x in tr if x['t'] < HOLD], rk, mp); b = RE.equity([x for x in tr if x['t'] >= HOLD], rk, mp)
+                cells.append(f'×{a[0]:.2f} (dd {a[1] * 100:.0f}%) / ×{b[0]:.2f}')
+            L.append(f'| {name} | {rk * 100:.1f}% | ' + ' | '.join(cells) + ' |')
     os.makedirs('p2_out', exist_ok=True); open('p2_out/BRK20_POOL.md', 'w').write('\n'.join(L) + '\n'); print('\n'.join(L))
 
 
