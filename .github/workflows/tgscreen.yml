@@ -12,17 +12,17 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install requests beautifulsoup4 numpy
-      - uses: actions/cache@v4
-        with:
-          path: tg_raw
-          key: tgraw-v1-${{ github.run_id }}
-          restore-keys: tgraw-v1-
-      - uses: actions/cache@v4
-        with:
-          path: kl_cache
-          key: tgkl-v1-${{ github.run_id }}
-          restore-keys: tgkl-v1-
+      - uses: actions/cache/restore@v4
+        with: {path: tg_raw, key: tgraw-v1-${{ github.run_id }}, restore-keys: tgraw-v1-}
+      - uses: actions/cache/restore@v4
+        with: {path: kl_cache, key: tgkl-v1-${{ github.run_id }}, restore-keys: tgkl-v1-}
       - run: python -u tgscreen/scrape.py tgscreen/channels.txt tg_raw 2024-11-24
+      - uses: actions/cache/save@v4
+        if: always()
+        with: {path: tg_raw, key: tgraw-v1-${{ github.run_id }}}
       - run: python -u tgscreen/screen.py tg_raw kl_cache tg_out
+      - uses: actions/cache/save@v4
+        if: always()
+        with: {path: kl_cache, key: tgkl-v1-${{ github.run_id }}}
       - run: cat tg_out/REPORT.md >> "$GITHUB_STEP_SUMMARY"
       - run: python -c "import json;d=json.load(open('tg_out/detail.json'));print(json.dumps(d,ensure_ascii=False)[:60000])"
