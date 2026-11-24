@@ -1,0 +1,16 @@
+[Unit]
+Description=CryptoX copy paper bot (slots 5-6: paper copy of a Telegram signal channel)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/brk20
+ExecStart=/usr/bin/python3 /root/brk20/brk20cx.py
+Restart=always
+RestartSec=60
+StandardOutput=append:/root/brk20/stdout_slot5.log
+StandardError=append:/root/brk20/stdout_slot5.log
+
+[Install]
+WantedBy=multi-user.target

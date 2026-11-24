@@ -7,8 +7,8 @@ cd "$DIR" || exit 1
 LOG="$DIR/update.log"
 note() { echo "$(date -u '+%Y-%m-%d %H:%M') UTC | $*" >> "$LOG"; }
 
-# новые боты слотов 3–4: ставим сервис один раз, как только файл появился в рабочей версии
-for s in brk20v12 brk20l; do
+# новые боты слотов 3–6: ставим сервис один раз, как только файл появился в рабочей версии
+for s in brk20v12 brk20l brk20cx; do
   if [ -f "$DIR/$s.service" ] && ! systemctl is-enabled --quiet "$s" 2>/dev/null; then
     cp "$DIR/$s.service" "/etc/systemd/system/$s.service" && systemctl daemon-reload && systemctl enable --now "$s" \
       && note "установлен и запущен сервис $s"
@@ -32,7 +32,7 @@ if (cd "$TMP" && python3 -m unittest discover -s tests > "$DIR/update_tests.log"
     note "локальные правки на сервере сохранены в $P"
   fi
   git reset -q --hard origin/main
-  for s in brk20 brk20s brk20v12 brk20l brk20-web; do
+  for s in brk20 brk20s brk20v12 brk20l brk20cx brk20-web; do
     systemctl is-enabled --quiet "$s" 2>/dev/null && systemctl restart "$s"
   done
   note "обновлено ${LOCAL:0:7} -> ${REMOTE:0:7}, сервисы перезапущены"
