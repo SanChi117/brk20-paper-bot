@@ -26,6 +26,31 @@ class Parse(unittest.TestCase):
         self.assertEqual(p(None), [])
 
 
+class Upbit(unittest.TestCase):
+    def test_titles(self):
+        b = importlib.import_module('brk20ev')
+        self.assertEqual(b.parse_upbit_title('로켓풀(RPL), 아큐라스트(ACU), 디브릿지(DBR), 오로치네트워크(ON) 신규 거래지원 안내 '
+                                             '(RPL, ACU, DBR 거래지원 개시 시점 변경 안내)'), ['RPL', 'ACU', 'DBR', 'ON'])
+        self.assertEqual(b.parse_upbit_title('제로지(0G) 거래 유의 종목 지정 안내'), [])
+        self.assertEqual(b.parse_upbit_title('하이퍼리퀴드(HYPE) 신규 거래지원 안내'), ['HYPE'])
+        self.assertEqual(b.parse_upbit_title('스톰엑스(STMX) 거래지원 종료 안내'), [])
+
+    def test_flow(self):
+        b = importlib.reload(importlib.import_module('brk20ev'))
+        d = tempfile.mkdtemp(); b.SLOT.set_dir(d)
+        now = 1_795_000_000_000
+        b.upbit_notices = lambda: [(now - 10 * 60000, '하이퍼리퀴드(HYPE) 신규 거래지원 안내', '9001')]
+        b.perp_of = lambda c: c + 'USDT'; b.price = lambda s: 40.0
+        st = b.SLOT.load_state(); st['up_init'] = True
+        b.step_upbit(st, now)
+        self.assertEqual(st['positions'], [])                       # ещё не прошёл час
+        b.step_upbit(st, now + 51 * 60000)
+        self.assertEqual(len(st['positions']), 1)
+        p = st['positions'][0]
+        self.assertEqual((p['sym'], p['side'], p['kind']), ('HYPEUSDT', 'short', 'upbit'))
+        self.assertAlmostEqual(p['notional'], 100.0); self.assertAlmostEqual(p['stop'], 44.0)
+
+
 class Signals(unittest.TestCase):
     def setUp(self):
         self.b = importlib.import_module('brk20ev')

@@ -6,6 +6,9 @@
 #  2) Отскок после пролива (5m, 53 монеты): 5-минутная свеча закрылась на −3% и ниже, ЛИБО цена была на −5% от максимума
 #     2 часов и 5-минутная свеча закрылась на +2% и выше → лонг по рынку, выход через 1 час (12 свечей). Пауза по монете 1 ч.
 #     Размер: 20% капитала на сделку, не больше 5 сделок одновременно.
+#  3) Листинг на Upbit: как только Upbit объявляет новую монету («신규 거래지원 안내»), через 1 час после объявления —
+#     шорт её фьючерса на Binance, стоп +10%, выход через 3 дня. Размер: 10% капитала (риск 1% при стопе 10%).
+#     История 05.2024–11.2026: 106 сделок, со стопом 10% в среднем +4.3% на сделку (+0.43R), плюс во всех полугодиях.
 # Издержки 0.08% на сторону (как в проверке). Режим БУМАЖНЫЙ: ордеров на бирже нет.
 import json
 import os
@@ -23,6 +26,8 @@ from slotlib import Slot
 BASE = 'https://fapi.binance.com'
 CMS = 'https://www.binance.com/bapi/composite/v1/public/cms/article/list/query'
 ENGINE = 'events-1'
+UPBIT = 'https://api-manager.upbit.com/api/v1/announcements'
+UP_FRAC, UP_STOP, UP_DELAY, UP_HOLD = 0.10, 0.10, 60 * 60 * 1000, 72 * 60 * 60 * 1000
 DIR = os.path.dirname(os.path.abspath(__file__))
 SLOT = Slot('slot7', 'СОБЫТИЯ', DIR, eq0=1000.0, risk=0.01, engine=ENGINE)
 COST = 0.0008
@@ -47,6 +52,13 @@ def parse_tag_title(title):
         return []
     parts = re.split(r',\s*|\s+&\s+|\s+and\s+', m.group(1))
     return [p.strip() for p in parts if re.fullmatch(r'[A-Z0-9]{2,12}', p.strip())]
+
+
+def parse_upbit_title(title):
+    """Заголовок уведомления Upbit -> тикеры нового листинга (или [])."""
+    if not title or '신규 거래지원 안내' not in title or re.search(r'종료|연기|취소', title):
+        return []
+    return list(dict.fromkeys(re.findall(r'\(([A-Z0-9]{2,12})\)', title)))
 
 
 def dip_signal(bars):
@@ -118,6 +130,18 @@ def perp_of(base):
     return None
 
 
+def upbit_notices():
+    js = _get(UPBIT, {'os': 'web', 'page': 1, 'per_page': 20, 'category': 'trade'})
+    out = []
+    try:
+        for n in js['data']['notices']:
+            ts = datetime.fromisoformat(n.get('first_listed_at') or n['listed_at']).timestamp()
+            out.append((int(ts * 1000), n['title'], str(n['id'])))
+    except Exception:
+        pass
+    return out
+
+
 def announcements():
     out = []
     for cat in (49, 161, 48):
@@ -173,6 +197,42 @@ def step_tags(st, now):
     st['tag_queue'] = keep
 
 
+def step_upbit(st, now):
+    seen = set(st.setdefault('seen_up', []))
+    first_run = not st.get('up_init')
+    for t, title, key in upbit_notices():
+        if key in seen:
+            continue
+        seen.add(key)
+        coins = parse_upbit_title(title)
+        if not coins or first_run:
+            continue
+        if now - t > TAG_MAX_DELAY:
+            SLOT.log(f'SKIP Upbit «{title[:60]}»: увидели через {(now - t) / 60000:.0f} мин'); continue
+        st.setdefault('up_queue', []).append({'t': t, 'title': title, 'coins': coins})
+        SLOT.log(f'ЛИСТИНГ UPBIT: {", ".join(coins)} — шорт через 1 час после объявления')
+    st['seen_up'] = list(seen)[-500:]
+    st['up_init'] = True
+    keep = []
+    for q in st.get('up_queue', []):
+        if now - q['t'] < UP_DELAY:
+            keep.append(q); continue
+        for c in q['coins']:
+            sym = perp_of(c)
+            if not sym:
+                SLOT.log(f'SKIP {c}: нет фьючерса USDT-M на Binance'); continue
+            if any(p['sym'] == sym for p in st['positions']):
+                continue
+            px = price(sym)
+            if not px:
+                continue
+            pos = new_position(sym, 'short', px, now, st['eq'] * UP_FRAC, px * (1 + UP_STOP), now + UP_HOLD, 'upbit',
+                               f'листинг на Upbit: «{q["title"][:100]}»')
+            st['positions'].append(pos)
+            SLOT.log(f'FILL {sym} шорт @ {px:.6g} | {pos["notional"]:.2f}$ | стоп {pos["stop"]:.6g} (+10%) | выход через 3 дня')
+    st['up_queue'] = keep
+
+
 def step_dips(st, now):
     bar_t = now // M5 * M5 - M5                        # последняя закрытая 5m-свеча
     if st.get('last_bar') == bar_t:
@@ -200,8 +260,8 @@ def step_dips(st, now):
 
 def step_exits(st, now):
     for pos in list(st['positions']):
-        if pos['kind'] == 'tag':
-            bars = klines5(pos['sym'], 300)
+        if pos['kind'] in ('tag', 'upbit'):
+            bars = klines5(pos['sym'], 1000)
             hit = next((b for b in bars if b[0] >= pos['entry_t'] // M5 * M5 and b[2] >= pos['stop']), None)
             if hit:
                 close_pos(st, pos, max(hit[1], pos['stop']), hit[0], 'stop'); continue
@@ -212,7 +272,7 @@ def step_exits(st, now):
 
 
 def main():
-    SLOT.log(f'=== EVENTS PAPER BOT стартовал | метка мониторинга (шорт 24 ч) + отскок после пролива (лонг 1 ч), {len(POOL)} монет ===')
+    SLOT.log(f'=== EVENTS PAPER BOT стартовал | метка мониторинга (шорт 24 ч) + листинг Upbit (шорт 3 дня) + отскок после пролива (лонг 1 ч), {len(POOL)} монет ===')
     while True:
         try:
             st = SLOT.load_state()
@@ -221,6 +281,7 @@ def main():
             step_exits(st, now)
             if not st.get('paused'):
                 step_tags(st, now)
+                step_upbit(st, now)
                 step_dips(st, now)
             SLOT.save_state(st)
             SLOT.write_status(st, f" | позиций по метке {sum(1 for p in st['positions'] if p['kind'] == 'tag')}")
