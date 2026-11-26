@@ -1,0 +1,16 @@
+[Unit]
+Description=Events paper bot (slot 7: monitoring-tag short + 5m dip bounce)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/brk20
+ExecStart=/usr/bin/python3 /root/brk20/brk20ev.py
+Restart=always
+RestartSec=60
+StandardOutput=append:/root/brk20/stdout_slot7.log
+StandardError=append:/root/brk20/stdout_slot7.log
+
+[Install]
+WantedBy=multi-user.target

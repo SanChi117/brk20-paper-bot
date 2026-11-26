@@ -46,8 +46,15 @@ LIVE = {
               'journal': os.path.join(DIR, 'journal_slot6.log'),
               'control': os.path.join(DIR, 'control_slot6.json'),
               'side': 'both', 'eq0': 100.0},
+    'slot7': {'state': os.path.join(DIR, 'state_slot7.json'),
+              'journal': os.path.join(DIR, 'journal_slot7.log'),
+              'control': os.path.join(DIR, 'control_slot7.json'),
+              'side': 'both', 'eq0': 1000.0},
 }
 COPY_SLOTS = ('slot5', 'slot6')
+EV_POOL = [s + 'USDT' for s in ('BTC ETH SOL BNB XRP DOGE ADA AVAX LINK DOT LTC BCH NEAR ATOM FIL ETC TRX UNI AAVE APT ARB OP '
+                                'INJ SUI XLM EOS ALGO SAND MANA AXS CRV SNX COMP GRT ICP EGLD HBAR VET THETA RUNE DYDX GALA '
+                                'CHZ KAVA 1INCH IMX LDO STX FET WLD SEI TIA ORDI').split()]
 
 BASE = 'https://fapi.binance.com'
 BYBIT = 'https://api.bybit.com'
@@ -73,6 +80,8 @@ BT_REF = {
     'slot4': {'n': 301, 'wr': 56.0, 'pf': 1.48, 'avg_r': 0.21, 'src': 'все листинги USDT-M 2020 – май 2026'},
     'slot5': {'n': 1920, 'wr': 73.5, 'pf': 0.58, 'avg_r': -0.112, 'src': 'сигналы канала 03.2024 – 11.2026 по свечам Binance'},
     'slot6': {'n': 1807, 'wr': 78.0, 'pf': 0.61, 'avg_r': -0.071, 'src': 'сигналы канала 03.2024 – 11.2026 по свечам Binance'},
+    'slot7': {'n': 6146, 'wr': 59.5, 'pf': 1.9, 'avg_r': 1.09,
+              'src': '2023 – окт 2026; R = доходность сделки в %; июнь–окт 2026 слабее (+0.5…+0.8% на сделку)'},
 }
 
 STRATEGIES = [
@@ -99,6 +108,12 @@ STRATEGIES = [
      'status': 'forward-gate', 'risk': '10% банка маржой', 'pool': 0,
      'desc': 'То же, что слот 5, но кросс-маржа: позицию держит весь счёт, работает стоп канала; сигналы без стопа держатся '
              'до тейка или 14 дней. Старт 100$.'},
+    {'id': 'slot7', 'name': 'СОБЫТИЯ', 'kind': 'Метка мониторинга Binance (шорт 24 ч) + отскок после 5-минутного пролива (лонг 1 ч)',
+     'status': 'forward-gate', 'risk': '5% / 20% капитала на сделку', 'pool': 53,
+     'desc': 'Шорт монет, на которые Binance вешает метку мониторинга: через 5 минут после объявления, выход через сутки, '
+             'аварийный стоп +20%. Лонг после 5-минутной свечи −3% и ниже или разворота (−5% от максимума 2 ч и свеча +2%), '
+             'выход через час, до 5 сделок одновременно. Обе идеи прошли проверку на 2023–2026 (p2/PREREG.md), на свежих '
+             'месяцах эффект слабее.'},
 ]
 
 def pool_of(strat):
@@ -116,11 +131,15 @@ def pool_of(strat):
         st = load_state(LIVE[strat]['state']) or {}
         syms = [p['sym'] for p in st.get('positions', [])] + [t['sym'] for t in st.get('trades', [])[-20:]]
         return list(dict.fromkeys(syms))
+    if strat == 'slot7':
+        st = load_state(LIVE[strat]['state']) or {}
+        extra = [p['sym'] for p in st.get('positions', [])] + [t['sym'] for t in st.get('trades', [])[-20:]]
+        return list(dict.fromkeys(extra + EV_POOL))
     return list(SYMS)
 
 def allowed_syms():
     out = set(SYMS) | set(POOL54)
-    for k in ('slot4',) + COPY_SLOTS:
+    for k in ('slot4', 'slot7') + COPY_SLOTS:
         out |= set(pool_of(k))
     out |= {p['sym'] for p in manual_book().get('positions', [])}
     return out
