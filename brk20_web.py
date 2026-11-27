@@ -46,12 +46,16 @@ LIVE = {
               'journal': os.path.join(DIR, 'journal_slot6.log'),
               'control': os.path.join(DIR, 'control_slot6.json'),
               'side': 'both', 'eq0': 100.0},
+    'slot8': {'state': os.path.join(DIR, 'state_slot8.json'),
+              'journal': os.path.join(DIR, 'journal_slot8.log'),
+              'control': os.path.join(DIR, 'control_slot8.json'),
+              'side': 'both', 'eq0': 1000.0},
     'slot7': {'state': os.path.join(DIR, 'state_slot7.json'),
               'journal': os.path.join(DIR, 'journal_slot7.log'),
               'control': os.path.join(DIR, 'control_slot7.json'),
               'side': 'both', 'eq0': 1000.0},
 }
-COPY_SLOTS = ('slot5', 'slot6')
+COPY_SLOTS = ('slot5', 'slot6', 'slot8')
 EV_POOL = [s + 'USDT' for s in ('BTC ETH SOL BNB XRP DOGE ADA AVAX LINK DOT LTC BCH NEAR ATOM FIL ETC TRX UNI AAVE APT ARB OP '
                                 'INJ SUI XLM EOS ALGO SAND MANA AXS CRV SNX COMP GRT ICP EGLD HBAR VET THETA RUNE DYDX GALA '
                                 'CHZ KAVA 1INCH IMX LDO STX FET WLD SEI TIA ORDI').split()]
@@ -80,6 +84,7 @@ BT_REF = {
     'slot4': {'n': 301, 'wr': 56.0, 'pf': 1.48, 'avg_r': 0.21, 'src': 'все листинги USDT-M 2020 – май 2026'},
     'slot5': {'n': 1920, 'wr': 73.5, 'pf': 0.58, 'avg_r': -0.112, 'src': 'сигналы канала 03.2024 – 11.2026 по свечам Binance'},
     'slot6': {'n': 1807, 'wr': 78.0, 'pf': 0.61, 'avg_r': -0.071, 'src': 'сигналы канала 03.2024 – 11.2026 по свечам Binance'},
+    'slot8': {'n': 37, 'wr': 49.0, 'pf': 0.52, 'avg_r': -0.21, 'src': 'сигналы ветки 06–11.2026 по свечам Binance (мало сделок)'},
     'slot7': {'n': 6146, 'wr': 59.5, 'pf': 1.9, 'avg_r': 1.09,
               'src': '2023 – окт 2026; R = доходность сделки в %; июнь–окт 2026 слабее (+0.5…+0.8% на сделку)'},
 }
@@ -108,6 +113,11 @@ STRATEGIES = [
      'status': 'forward-gate', 'risk': '10% банка маржой', 'pool': 0,
      'desc': 'То же, что слот 5, но кросс-маржа: позицию держит весь счёт, работает стоп канала; сигналы без стопа держатся '
              'до тейка или 14 дней. Старт 100$.'},
+    {'id': 'slot8', 'name': 'VIP CRYPTOX', 'kind': 'Копия ветки Vip CryptoX один в один с постом',
+     'status': 'forward-gate', 'risk': 'как в посте', 'pool': 0,
+     'desc': 'Бот читает ветку и повторяет пост: плечо, кросс-маржа, размер (риск или маржа из поста, иначе 3% маржи), '
+             'вход по рынку или лимит/триггер от точки (ждёт 48 ч), стоп, перенос в безубыток на указанной точке, частичные '
+             'фиксации в процентах из поста. Посты без стопа или тейков в тексте пропускаются. Старт 1000$.'},
     {'id': 'slot7', 'name': 'СОБЫТИЯ', 'kind': 'Метка мониторинга Binance (шорт 24 ч) + листинг Upbit (шорт 3 дня) + отскок после пролива (лонг 1 ч)',
      'status': 'forward-gate', 'risk': '5% / 20% капитала на сделку', 'pool': 53,
      'desc': 'Шорт монет, на которые Binance вешает метку мониторинга: через 5 минут после объявления, выход через сутки, '

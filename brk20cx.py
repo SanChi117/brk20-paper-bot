@@ -343,10 +343,14 @@ async def run():
     if not await client.is_user_authorized():
         SLOTS['iso'].log('нет входа в Telegram — один раз запустите на сервере: cd /root/brk20 && bash tg.sh')
         await client.disconnect(); await asyncio.sleep(600); return
-    chan = None
+    import brk20vip as VIP
+    VIP.make_slot(DIR)
+    chan = vchan = None
     async for d in client.iter_dialogs():
         if getattr(d.entity, 'id', None) == CHANNEL_ID:
-            chan = d.entity; break
+            chan = d.entity
+        if getattr(d.entity, 'id', None) == VIP.CHANNEL_ID:
+            vchan = d.entity
     if chan is None:
         SLOTS['iso'].log('канал CryptoX | ProTrading не найден среди ваших подписок'); await asyncio.sleep(600); return
     bot = Bot()
@@ -363,6 +367,35 @@ async def run():
         async for m in client.iter_messages(chan, limit=1):
             bot.st['iso']['last_msg_id'] = m.id
     bot.save()
+
+    def _price(sym):
+        js = _get('/fapi/v1/ticker/price', {'symbol': sym})
+        return float(js['price']) if js else None
+    vbot = None
+    if vchan is not None:
+        vbot = VIP.VipBot(resolve, klines_1m, _price)
+        vlast = vbot.st.get('last_msg_id')
+        if vlast:
+            async for m in client.iter_messages(vchan, min_id=vlast, reverse=True):
+                t = int(m.date.timestamp() * 1000)
+                await asyncio.to_thread(vbot.on_post, m.id, m.message, t, (time.time() * 1000 - t) < 5 * 60000)
+                vbot.st['last_msg_id'] = m.id
+        else:
+            async for m in client.iter_messages(vchan, limit=1):
+                vbot.st['last_msg_id'] = m.id
+        vbot.save()
+        VIP.SLOT.log('=== VIP CRYPTOX COPY PAPER BOT стартовал | читаю ветку Vip CryptoX | счёт 1000$, кросс-маржа, плечи и размер из поста ===')
+
+        @client.on(events.NewMessage(chats=vchan))
+        async def vhandler(ev):
+            m = ev.message; t = int(m.date.timestamp() * 1000)
+            try:
+                await asyncio.to_thread(vbot.on_post, m.id, m.message, t)
+                vbot.st['last_msg_id'] = max(vbot.st.get('last_msg_id') or 0, m.id)
+            except Exception as e:
+                VIP.SLOT.log(f'ERROR пост #{m.id}: {e}')
+    else:
+        VIP.SLOT.log('ветка Vip CryptoX не найдена среди ваших подписок')
     SLOTS['iso'].log(f'=== CRYPTOX COPY PAPER BOT стартовал | читаю канал | 2 счёта по {EQ0:.0f}$ (изол/кросс) | бумажный режим ===')
 
     @client.on(events.NewMessage(chats=chan))
@@ -383,6 +416,11 @@ async def run():
                 await asyncio.to_thread(bot.manage)
             except Exception as e:
                 SLOTS['iso'].log(f'ERROR manage: {e}')
+            if vbot is not None:
+                try:
+                    await asyncio.to_thread(vbot.manage)
+                except Exception as e:
+                    VIP.SLOT.log(f'ERROR manage: {e}')
             await asyncio.sleep(30)
 
     task = asyncio.ensure_future(loop())
