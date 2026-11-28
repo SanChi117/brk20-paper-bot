@@ -14,7 +14,7 @@ FT0, SLP0 = 0.0005, 0.0003
 RISK, MAXPOS = 0.003, 8
 
 
-def run(d, e, em, cm, add_frac=1.0, fund=True):
+def run(d, e, em, cm, add_frac=1.0, fund=True, min_stop=0.0):
     """stress.run с выходом на следующем открытии + фандинг; add_frac — размер добора от первой части."""
     o, h, l, c, t = d['o'], d['h'], d['l'], d['c'], d['t']
     s, a = e['s'], e['a']; j0 = e['i'] + 1; maxh = 72
@@ -24,6 +24,8 @@ def run(d, e, em, cm, add_frac=1.0, fund=True):
     e1 = o[j0]; stop = e['lvl'] - s * 0.5 * a; risk = abs(e1 - stop)
     if risk <= 0 or s * (e1 - stop) <= 0:
         return None
+    if risk < min_stop * e1:                   # минимальная ширина стопа: отодвигаем стоп, размер по риску
+        risk = min_stop * e1; stop = e1 - s * risk
     units = [(e1, 1.0)]; added = False
     ft = d['_ft']; fr = d['_fr']
 
@@ -62,7 +64,7 @@ def rv_ratio(c, i):
     return a / b if b > 0 else np.nan
 
 
-def collect(dirs, cm, add_frac):
+def collect(dirs, cm, add_frac, min_stop=0.0):
     out = []; rets = {}
     for dd in dirs:
         ls.DATA = dd
@@ -76,7 +78,7 @@ def collect(dirs, cm, add_frac):
             for e in B.events(d, f, REG, True):
                 if e['sc'] < 5 or pd.Timestamp(int(d['t'][e['i']]) + H, unit='ms').dayofweek >= 5:
                     continue
-                r = run(d, e, em, cm, add_frac)
+                r = run(d, e, em, cm, add_frac, min_stop=min_stop)
                 if not r:
                     continue
                 i = e['i']
