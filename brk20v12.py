@@ -34,6 +34,7 @@ ENGINE = 'v1.2-1'
 DIR = os.path.dirname(os.path.abspath(__file__))
 SLOT = Slot('slot3', 'V1.2', DIR, eq0=1000.0, risk=RISK, engine=ENGINE)
 NAN = float('nan')
+TREND_FILTER = False          # слот 9: пропускать пробои против дневного тренда (закрытие вчерашнего дня vs EMA50 дней)
 
 
 # ---------------------------------------------------------------- индикаторы (как в label_study.features)
@@ -238,6 +239,25 @@ def fetch_funding(sym, t0, t1):
     return sum(float(x['fundingRate']) for x in js if t0 <= int(x['fundingTime']) < t1)
 
 
+def day_trend(sym, t_bar):
+    """Знак (закрытие − EMA50) последнего закрытого дня ДО дня бара t_bar (UTC), как в p2/v12_improve.daily_trend.
+    0 — если данных мало или биржа не ответила (тогда сделка не отсеивается, как в бэктесте)."""
+    js = _get('/fapi/v1/klines', {'symbol': sym, 'interval': '1d', 'limit': 1000})
+    if not js:
+        return 0
+    day0 = (t_bar // (24 * H)) * 24 * H
+    closes = [float(x[4]) for x in js if int(x[0]) < day0]
+    return day_trend_of(closes)
+
+
+def day_trend_of(closes):
+    if len(closes) < 60:
+        return 0
+    e = ema(closes, 50)
+    d = closes[-1] - e[-1]
+    return (d > 0) - (d < 0)
+
+
 def active_pool():
     js = _get('/fapi/v1/exchangeInfo', {}, timeout=20)
     if not js:
@@ -310,6 +330,11 @@ def scan(st, pool):
             SLOT.log(f'SKIP {sym}: пробой {side} слабый, балл {sc}/6'); continue
         if not weekday_ok(S.t[i]):
             SLOT.log(f'SKIP {sym}: сильный пробой {side} в выходные — правило v1.2 их пропускает'); continue
+        if TREND_FILTER:
+            dtr = day_trend(sym, S.t[i])
+            if dtr * s < 0:
+                SLOT.log(f"SKIP {sym}: сильный пробой {side}, но дневной тренд {'вниз' if dtr < 0 else 'вверх'} — "
+                         f"слот 9 берёт только сделки по тренду"); continue
         a = S.atr[i]; e1 = forming[1]; stop = lvl - s * 0.5 * a; risk = abs(e1 - stop)
         if risk <= 0 or s * (e1 - stop) <= 0:
             SLOT.log(f'SKIP {sym}: вход {e1:.6g} уже за стопом {stop:.6g}'); continue
@@ -326,7 +351,7 @@ def scan(st, pool):
 
 
 def main():
-    SLOT.log(f'=== V1.2 PAPER BOT стартовал | пул {len(POOL)} монет | риск {RISK * 100:.0f}% | бумажный режим ===')
+    SLOT.log(f'=== {SLOT.name} PAPER BOT стартовал{" (только по дневному тренду)" if TREND_FILTER else ""} | пул {len(POOL)} монет | риск {RISK * 100:.0f}% | бумажный режим ===')
     st = SLOT.load_state()
     pool, missing = active_pool(); pool_t = time.time()
     if missing:

@@ -34,6 +34,10 @@ LIVE = {
               'journal': os.path.join(DIR, 'journal_slot3.log'),
               'control': os.path.join(DIR, 'control_slot3.json'),
               'side': 'both', 'eq0': 1000.0},
+    'slot9': {'state': os.path.join(DIR, 'state_slot9.json'),
+              'journal': os.path.join(DIR, 'journal_slot9.log'),
+              'control': os.path.join(DIR, 'control_slot9.json'),
+              'side': 'both', 'eq0': 1000.0},
     'slot4': {'state': os.path.join(DIR, 'state_slot4.json'),
               'journal': os.path.join(DIR, 'journal_slot4.log'),
               'control': os.path.join(DIR, 'control_slot4.json'),
@@ -81,6 +85,8 @@ BT_REF = {
     'brk20': {'n': 191, 'wr': None, 'pf': 1.723, 'avg_r': None, 'src': 'bt_candidates19.py, 2021–2025'},
     'slot2': {'n': 117, 'wr': None, 'pf': 1.834, 'avg_r': None, 'src': 'bt_short1.py, 2021–2025'},
     'slot3': {'n': 2918, 'wr': 26.0, 'pf': 1.37, 'avg_r': 0.38, 'src': '54 монеты, 2022 – май 2026; июнь–окт 2026: PF 2.89'},
+    'slot9': {'n': 1587, 'wr': None, 'pf': None, 'avg_r': None,
+              'src': 'V1.2 только по дневному тренду, 54 монеты 2022 – май 2026: просадка 15–23% против 31–39% у V1.2; июнь–окт 2026 хуже V1.2'},
     'slot4': {'n': 301, 'wr': 56.0, 'pf': 1.48, 'avg_r': 0.21, 'src': 'все листинги USDT-M 2020 – май 2026'},
     'slot5': {'n': 1920, 'wr': 73.5, 'pf': 0.58, 'avg_r': -0.112, 'src': 'сигналы канала 03.2024 – 11.2026 по свечам Binance'},
     'slot6': {'n': 1807, 'wr': 78.0, 'pf': 0.61, 'avg_r': -0.071, 'src': 'сигналы канала 03.2024 – 11.2026 по свечам Binance'},
@@ -100,6 +106,11 @@ STRATEGIES = [
      'status': 'forward-gate', 'risk': '1%', 'pool': len(POOL54),
      'desc': 'Сжатие Боллинджера → пробой 36-часового диапазона с баллом силы ≥5/6 → вход по рынку, стоп за уровнем −0.5 ATR, '
              'добор на +1R, выход за EMA20 или через 72 ч. До 8 позиций. Бот сверен с бэктестом: 3199 из 3199 сделок совпали.'},
+    {'id': 'slot9', 'name': 'V1.2 ТРЕНД', 'kind': 'V1.2, но только пробои по дневному тренду (1h), лонг и шорт',
+     'status': 'forward-gate', 'risk': '1%', 'pool': len(POOL54),
+     'desc': 'Все правила V1.2 без изменений, плюс фильтр: лонг только если вчерашний день закрылся выше EMA50 дневных свечей, '
+             'шорт — только если ниже. На истории просадка вдвое меньше, но крупный рост альтов против тренда (как 19–22.08.2026) '
+             'пропускается. Работает параллельно со слотом 3 — форвард покажет, какая версия лучше.'},
     {'id': 'slot4', 'name': 'ЛИСТИНГИ', 'kind': 'Шорт новых фьючерсов Binance после слома пампа',
      'status': 'forward-gate', 'risk': '5%', 'pool': 0,
      'desc': 'Новый листинг: памп ≥ +5% к первой цене, затем час закрылся ниже неё → шорт. Стоп над хаем +2%, тейк −25%, '
@@ -129,8 +140,8 @@ STRATEGIES = [
 def pool_of(strat):
     if strat in ('brk20', 'slot2'):
         return list(SYMS)
-    if strat == 'slot3':
-        st = load_state(LIVE['slot3']['state']) or {}
+    if strat in ('slot3', 'slot9'):
+        st = load_state(LIVE[strat]['state']) or {}
         return st.get('pool') or list(POOL54)
     if strat == 'slot4':
         st = load_state(LIVE['slot4']['state']) or {}
@@ -241,7 +252,7 @@ def indicator_lines(sym, strat, both=False):
                 lines.append({'name': name, 'color': col, 'width': 2 if name == mine else 1, 'step': True, 'pts': pts})
         info = ' · '.join(f"{l['name']} {l['pts'][-1][1]:.6g}" for l in lines) + (f" · ATR(4h) {d['atr']:.6g}" if d.get('atr') else '')
         return {'lines': lines, 'info': info}
-    if strat == 'slot3':
+    if strat in ('slot3', 'slot9'):
         rows = klines(sym, '1h', 500)
         if len(rows) < 60:
             return {'lines': [], 'info': ''}
@@ -403,7 +414,7 @@ def quotes(strat='brk20'):
     rows = [dict(allq[s]) for s in pool if s in allq]
     if strat in ('brk20', 'slot2'):
         lv, names = trigger_levels(), ('HI20', 'LO20')
-    elif strat == 'slot3':
+    elif strat in ('slot3', 'slot9'):
         lv, names = channel36(), ('хай 36ч', 'лоу 36ч')
     elif strat == 'slot4':
         st = load_state(LIVE['slot4']['state']) or {}
