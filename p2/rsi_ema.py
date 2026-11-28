@@ -13,7 +13,7 @@ COST = 0.0008            # на сторону: taker + проскальзыва
 def bars4h(d):
     df = pd.DataFrame({'o': d['o'], 'h': d['h'], 'l': d['l'], 'c': d['c']}, index=pd.to_datetime(d['t'], unit='ms'))
     g = df.resample('4h').agg({'o': 'first', 'h': 'max', 'l': 'min', 'c': 'last'}).dropna()
-    return g.index.view('int64') // 10 ** 6, g['o'].values, g['c'].values
+    return g.index.asi8 // 10 ** 6, g['o'].values, g['c'].values
 
 
 def trades(t, o, c, mode):
