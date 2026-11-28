@@ -66,6 +66,17 @@ def daily_trend(d):
     return sg.reindex(t.floor('1D')).values
 
 
+def rsi(c, n=14):
+    """RSI Уайлдера."""
+    c = np.asarray(c, float); d = np.diff(c, prepend=c[0])
+    up = pd.Series(np.clip(d, 0, None)).ewm(alpha=1 / n, adjust=False).mean().values
+    dn = pd.Series(np.clip(-d, 0, None)).ewm(alpha=1 / n, adjust=False).mean().values
+    with np.errstate(divide='ignore', invalid='ignore'):
+        r = 100 - 100 / (1 + up / dn)
+    r[dn == 0] = 100.0
+    return r
+
+
 def rv_ratio(c, i):
     r = np.diff(np.log(c[max(0, i - 168):i + 1]))
     if len(r) < 168:
@@ -84,6 +95,7 @@ def collect(dirs, cm, add_frac, min_stop=0.0, **kw):
                 continue
             d['_ft'] = np.array([x[0] for x in d['fund']]); d['_fr'] = np.array([x[1] for x in d['fund']])
             f = ls.features(d); em = X.ema(d['c'], 20); dt = daily_trend(d)
+            rs = rsi(d['c']); rse = pd.Series(rs).ewm(span=9, adjust=False).mean().values
             rets[s] = pd.Series(np.r_[np.nan, np.diff(np.log(d['c']))], index=d['t'].astype(np.int64))
             for e in B.events(d, f, REG, True):
                 if e['sc'] < 5 or pd.Timestamp(int(d['t'][e['i']]) + H, unit='ms').dayofweek >= 5:
@@ -93,7 +105,7 @@ def collect(dirs, cm, add_frac, min_stop=0.0, **kw):
                     continue
                 i = e['i']
                 r.update(sym=s, s=e['s'], sc=e['sc'], ti=int(d['t'][i]), grp=('A' if dd == DIRS[0] else 'B'),
-                         dtr=dt[i] * e['s'] if dt[i] == dt[i] else 0.0, rv=rv_ratio(d['c'], i))
+                         dtr=dt[i] * e['s'] if dt[i] == dt[i] else 0.0, rv=rv_ratio(d['c'], i), rsi=float(rs[i]), rsi_d=float(rs[i] - rse[i]) * e['s'])
                 out.append(r)
     return out, rets
 
