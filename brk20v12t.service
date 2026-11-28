@@ -1,0 +1,16 @@
+[Unit]
+Description=V1.2 trend paper bot (slot 9: V1.2 only with daily trend)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/brk20
+ExecStart=/usr/bin/python3 /root/brk20/brk20v12t.py
+Restart=always
+RestartSec=30
+StandardOutput=append:/root/brk20/stdout_slot9.log
+StandardError=append:/root/brk20/stdout_slot9.log
+
+[Install]
+WantedBy=multi-user.target
