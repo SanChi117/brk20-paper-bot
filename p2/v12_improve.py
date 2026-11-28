@@ -14,7 +14,7 @@ FT0, SLP0 = 0.0005, 0.0003
 RISK, MAXPOS = 0.003, 8
 
 
-def run(d, e, em, cm, add_frac=1.0, fund=True, min_stop=0.0):
+def run(d, e, em, cm, add_frac=1.0, fund=True, min_stop=0.0, pfrac=0.0, pR=1.0, pbe=False):
     """stress.run с выходом на следующем открытии + фандинг; add_frac — размер добора от первой части."""
     o, h, l, c, t = d['o'], d['h'], d['l'], d['c'], d['t']
     s, a = e['s'], e['a']; j0 = e['i'] + 1; maxh = 72
@@ -26,19 +26,29 @@ def run(d, e, em, cm, add_frac=1.0, fund=True, min_stop=0.0):
         return None
     if risk < min_stop * e1:                   # минимальная ширина стопа: отодвигаем стоп, размер по риску
         risk = min_stop * e1; stop = e1 - s * risk
-    units = [(e1, 1.0)]; added = False
+    units = [(e1, 1.0)]; added = False; part = 0.0; pdone = pfrac <= 0
     ft = d['_ft']; fr = d['_fr']
 
     def fin(px, j_exit, out):
         q = sum(w for _, w in units)
-        pnl = sum(w * s * (px - u) for u, w in units) - k * sum(u * w for u, w in units) - k * px * q
+        pnl = sum(w * s * (px - u) for u, w in units) - k * sum(u * w for u, w in units) - k * px * q + part
         if fund and len(ft):
             a_, b_ = np.searchsorted(ft, t[j0]), np.searchsorted(ft, t[j_exit] + H)
             pnl -= s * fr[a_:b_].sum() * sum(u * w for u, w in units)
-        return dict(R=pnl / risk, t=int(t[j0]), tx=int(t[j_exit] + H), sp=risk / e1, out=out)
+        seg = slice(j0, j_exit + 1)
+        mfe = ((h[seg].max() - e1) if s == 1 else (e1 - l[seg].min())) / risk
+        return dict(R=pnl / risk, t=int(t[j0]), tx=int(t[j_exit] + H), sp=risk / e1, out=out, mfe=mfe)
     for j in range(j0, j0 + maxh):
         if (s == 1 and l[j] <= stop) or (s == -1 and h[j] >= stop):
             return fin(min(o[j], stop) if s == 1 else max(o[j], stop), j, 'stop')
+        if not pdone:                          # частичная фиксация pfrac первой части на +pR (стоп проверен раньше)
+            lp = e1 + s * pR * risk
+            if (s == 1 and h[j] >= lp) or (s == -1 and l[j] <= lp):
+                px = max(o[j], lp) if s == 1 else min(o[j], lp)
+                part += pfrac * (s * (px - e1) - k * e1 - k * px)
+                units[0] = (e1, 1.0 - pfrac); pdone = True
+                if pbe:
+                    stop = e1
         if not added and add_frac > 0:
             lv = e1 + s * risk
             if (s == 1 and h[j] >= lv) or (s == -1 and l[j] <= lv):
@@ -64,7 +74,7 @@ def rv_ratio(c, i):
     return a / b if b > 0 else np.nan
 
 
-def collect(dirs, cm, add_frac, min_stop=0.0):
+def collect(dirs, cm, add_frac, min_stop=0.0, **kw):
     out = []; rets = {}
     for dd in dirs:
         ls.DATA = dd
@@ -78,7 +88,7 @@ def collect(dirs, cm, add_frac, min_stop=0.0):
             for e in B.events(d, f, REG, True):
                 if e['sc'] < 5 or pd.Timestamp(int(d['t'][e['i']]) + H, unit='ms').dayofweek >= 5:
                     continue
-                r = run(d, e, em, cm, add_frac, min_stop=min_stop)
+                r = run(d, e, em, cm, add_frac, min_stop=min_stop, **kw)
                 if not r:
                     continue
                 i = e['i']
