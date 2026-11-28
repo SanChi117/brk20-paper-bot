@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# rerun 2026-11-28: данные за 27.11
+# rerun 2026-11-28 14:16 UTC: данные за 27.11
 """Ход цены в последних бумажных сделках v1.2 (слот 3): максимум в плюс до выхода, в R. Публичные 1m свечи Binance."""
 import io, zipfile, urllib.request, csv
 from datetime import datetime, timezone
